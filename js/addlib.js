@@ -23,6 +23,6 @@
       var u = C.units.filter(function (x) { return x.id === unit; })[0];
       if (u) u.skills.push(id); else throw new Error("unit? " + unit);
     },
-    more: function (skill, probs) { n++; addProblems(skill, "m3-", probs, n); },
+    more: function (skill, probs, pfx) { n++; addProblems(skill, pfx || "m3-", probs, n); },
   };
 })();
