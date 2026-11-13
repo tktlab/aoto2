@@ -466,7 +466,7 @@
       h("div", { class: "mdots" }, pr),
       h("div", { class: "quiz-pet" }, A.petEmoji()));
     var qcard = h("section", { class: "qcard", style: { "--c": sub.color } },
-      h("div", { class: "qtag" }, sub.emoji + " " + (Q.label ? Q.label + " ▸ " : "") + Q.skill.name),
+      h("div", { class: "qtag" }, sub.emoji + " " + sub.id + " ▸ " + (Q.label ? Q.label + " ▸ " : "") + Q.skill.name),
       h("p", { class: "qtext" }, p.question),
       h("button", { class: "btn small", "aria-label": "よみあげ", onclick: function (e) {
         var b = e.currentTarget;
