@@ -362,29 +362,119 @@
     var s = S(), busy = false;
     var machine = h("div", { class: "gacha-machine", role: "img", "aria-label": "ガチャのきかい" });
     machine.innerHTML = MACHINE_SVG;
-    var pull = h("button", { class: "btn big go", disabled: (s.tickets || 0) < 1 ? true : null, onclick: function () {
+    var meterFill = h("div", { class: "g-meter-fill" });
+    var meter = h("div", { class: "g-meter" }, meterFill);
+    var holding = false, t0 = 0, noTicket = (s.tickets || 0) < 1;
+    function startHold(e) {
       if (busy || (S().tickets || 0) < 1) return;
-      busy = true; A.sfx("tap"); machine.classList.add("shake");
+      if (e && e.preventDefault) e.preventDefault();
+      holding = true; t0 = Date.now();
+      machine.classList.add("charging");
+      meterFill.style.transition = "width 1.2s linear"; meterFill.style.width = "100%";
+      A.sfx("charge");
+    }
+    function endHold() {
+      if (!holding) return;
+      holding = false; busy = true;
+      var power = Math.min(1, (Date.now() - t0) / 1200);
+      machine.classList.remove("charging"); meterFill.style.transition = "none"; meterFill.style.width = "0";
+      machine.classList.add("shake");
+      if (navigator.vibrate) { try { navigator.vibrate(power >= 1 ? [30, 40, 60] : 30); } catch (e) {} }
       setTimeout(function () {
         machine.classList.remove("shake");
         var o = pullGacha();
         if (!o) { gachaScreen(); return; }
-        var m = o.mate, c = CREATURES[m.kind % CREATURES.length];
-        var rare = m.v;
-        var title = o.dup ? "ダブりだったよ" : rare >= 3 ? "ゴールドの なかま!!" : rare >= 1 ? "レアな なかま!" : "なかまが きたよ!";
-        var text = c.n + "(" + TINT[m.v].n + " " + "★".repeat(m.v + 1) + ")" + (o.dup ? " おなじ子だったから ごはん +2 に かえたよ" : " なかまの へやに あそびに きたよ! ごはんを あげて しんかさせよう");
-        A.confetti(rare >= 1 ? 50 : 24);
-        overlay(mateArt(m, 2), title, text, o.dup ? "ありがとう" : "やったー!", gachaScreen);
-      }, 900);
-    } }, "🎟️ ガチャを ひく! (1まい)");
+        playGacha(o, power);
+      }, 420);
+    }
+    ["pointerdown"].forEach(function (ev) { machine.addEventListener(ev, startHold); });
+    ["pointerup", "pointercancel"].forEach(function (ev) { machine.addEventListener(ev, endHold); });
+    var pull = h("button", { class: "btn big go g-pull", disabled: noTicket ? true : null }, "🎟️ ぐーっと おして、はなす!");
+    ["pointerdown"].forEach(function (ev) { pull.addEventListener(ev, startHold); });
+    ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) { pull.addEventListener(ev, endHold); });
+    pull.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     view(topbar("ガチャ", home),
       h("section", { class: "gacha-card" },
         machine,
         h("div", { class: "ticket-line" }, "🎟️ ガチャチケット ×" + (s.tickets || 0)),
-        pull,
+        meter, pull,
+        (s.tickets || 0) < 1 ? null : h("div", { class: "mission-sub" }, "ガチャの きかいを ながおししても OK。はなすと カプセルが でてくるよ!"),
         (s.tickets || 0) < 1 ? h("div", { class: "note" }, "チケットは まいにち ひらくと 1まい、ミッション(3もん)クリアで 1まい もらえるよ!") : null,
         h("div", { class: "mission-sub" }, "12しゅるいの なかま × 4つの いろ。ゴールドは 5%、10かいに 1かいは レアカラー いじょう!"),
         h("button", { class: "btn alt", onclick: function () { A.sfx("tap"); roomScreen(); } }, "🐾 なかまの へやへ")));
+  }
+  var CAP = ["#5fb8ff", "#c58bff", "#ff8ac8", "#ffd54a"];
+  function playGacha(o, power) {
+    var m = o.mate, c = CREATURES[m.kind % CREATURES.length], v = m.v, timers = [], closed = false, fin = false, opened = false;
+    var T = function (fn, ms) { timers.push(setTimeout(function () { if (!closed && !fin) fn(); }, ms)); };
+    var vib = function (p) { if (navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} } };
+    var cap = h("div", { class: "capsule drop" }, h("div", { class: "cap-top", style: { background: CAP[v] } }), h("div", { class: "cap-bot" }), h("div", { class: "cap-shine" }));
+    var capWrap = h("div", { class: "g-capwrap" }, cap);
+    var hint = h("div", { class: "g-hint" }, "");
+    var rays = h("div", { class: "g-rays" });
+    var art = h("div", { class: "g-art" });
+    var title = h("div", { class: "g-title" }), nameEl = h("div", { class: "g-name" }), starsEl = h("div", { class: "g-stars" }), sub = h("div", { class: "g-sub" });
+    var actions = h("div", { class: "g-actions" });
+    var flash = h("div", { class: "g-flash" });
+    var stage;
+    function close() { closed = true; timers.forEach(clearTimeout); if (stage.parentNode) stage.parentNode.removeChild(stage); }
+    var skip = h("button", { class: "g-skip", onclick: function () { showFinal(); } }, "スキップ ▶");
+    stage = h("div", { class: "gstage t" + v }, rays, capWrap, hint, art, title, nameEl, starsEl, sub, actions, flash, skip);
+    document.body.appendChild(stage);
+    A.sfx("drop"); vib(40);
+    function colored(el) { el.style.filter = v ? TINT[v].f : "none"; }
+    function showActions() {
+      A.clear(actions);
+      var left = S().tickets || 0;
+      actions.appendChild(h("button", { class: "btn big go", disabled: left < 1 ? true : null, onclick: function () { close(); gachaScreen(); } }, "🎟️ もういっかい(のこり " + left + ")"));
+      actions.appendChild(h("button", { class: "btn big alt", onclick: function () { close(); roomScreen(); } }, "🐾 なかまの へやへ"));
+      actions.appendChild(h("button", { class: "btn-ghost", onclick: function () { close(); gachaScreen(); } }, "とじる"));
+      skip.style.display = "none";
+    }
+    function titleText() { return o.dup ? "ダブりだったよ" : v >= 3 ? "ゴールドだー!!" : v >= 2 ? "スーパーレア!" : v >= 1 ? "レアだよ!" : "なかまが きたよ!"; }
+    function fillTexts() {
+      title.textContent = titleText(); title.classList.add("show");
+      nameEl.textContent = c.n + "(" + TINT[v].n + ")";
+      starsEl.textContent = "★".repeat(v + 1);
+      sub.textContent = o.dup ? "おなじ子だったから ごはん +2 に かえたよ" : "なかまの へやに あそびに きたよ! ごはんで しんかできるよ";
+    }
+    function showFinal() {
+      if (fin) return; fin = true; timers.forEach(clearTimeout);
+      capWrap.style.display = "none"; hint.textContent = ""; flash.classList.remove("on");
+      stage.classList.add("revealed");
+      A.clear(art);
+      var el = h("div", { class: "g-sil color" }, A.creatures.el(m.kind, 2)); colored(el);
+      art.appendChild(el); art.classList.add("pop");
+      fillTexts(); showActions();
+    }
+    function reveal() {
+      capWrap.style.display = "none"; hint.textContent = "";
+      stage.classList.add("revealed");
+      var sil = h("div", { class: "g-sil" }, A.creatures.el(m.kind, 2));
+      art.appendChild(sil); art.classList.add("pop");
+      flash.classList.remove("on");
+      title.textContent = "だれかな…?"; title.classList.add("show");
+      A.sfx("pop"); vib(30);
+      T(function () {
+        sil.classList.add("color"); colored(sil);
+        fillTexts(); title.classList.add("big");
+        A.sfx(v >= 1 ? "rare" : "reveal"); A.confetti(v >= 1 ? 54 : 24); vib(v >= 2 ? [60, 40, 90] : 40);
+        if (v >= 3) stage.classList.add("goldburst");
+        starsEl.textContent = "";
+        for (var i = 0; i <= v; i++) (function (k) { T(function () { starsEl.textContent = "★".repeat(k + 1); A.sfx("tick"); }, 250 + k * 280); })(i);
+        T(function () { fin = true; showActions(); }, 600 + (v + 1) * 280);
+      }, 1200);
+    }
+    function open() {
+      if (opened) return; opened = true;
+      hint.textContent = ""; cap.classList.remove("wobble"); cap.classList.add("crack");
+      A.sfx("crack"); vib([20, 30, 20]);
+      T(function () { flash.classList.add("on"); }, 700);
+      T(reveal, 950);
+    }
+    capWrap.addEventListener("click", open);
+    T(function () { cap.classList.remove("drop"); cap.classList.add("wobble"); hint.textContent = "👆 タップして あけよう!"; }, 1000);
+    T(open, 9000);
   }
   function mateStatus(m) {
     var f = formOf(m);
