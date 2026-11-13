@@ -52,7 +52,7 @@
       days: {},
       skills: {},
       log: [],
-      settings: { voice: true, sound: true },
+      settings: { voice: true, sound: true, bgm: true },
       course: {},
       ranges: [],
       write: {},
@@ -70,6 +70,7 @@
         Object.keys(d).forEach(function (k) {
           if (o[k] === undefined) o[k] = d[k];
         });
+        if (o.name === "あおと") o.name = "";
         return o;
       }
     } catch (e) {}
@@ -153,6 +154,69 @@
       try { navigator.vibrate(30); } catch (e) {}
     }
   };
+
+  /* ---------- BGM (WebAudio で自動生成。やさしいループ。外部ファイルなし) ---------- */
+  var BGM = { on: false, timer: null, next: 0, bar: 0, master: null };
+  var BAR = 2.4, VOL = 0.07;
+  var CHORDS = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]];
+  var PENT = [72, 74, 76, 79, 81, 84];
+  function mtof(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+  function bgmOk() { return A.S.settings.bgm !== false; }
+  function bgmNote(c, f, t0, dur, type, peak, attack) {
+    var o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(BGM.master);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  function bgmBar(c, t) {
+    var ch = CHORDS[BGM.bar % CHORDS.length]; BGM.bar++;
+    ch.forEach(function (m) { bgmNote(c, mtof(m), t, BAR + 0.4, "sine", 0.35, 0.5); });
+    bgmNote(c, mtof(ch[0] - 12), t, BAR, "sine", 0.4, 0.2);
+    for (var i = 0; i < 8; i++) {
+      if (i % 2 === 0 ? Math.random() < 0.6 : Math.random() < 0.3) {
+        var m = PENT[Math.floor(Math.random() * PENT.length)];
+        bgmNote(c, mtof(m), t + i * (BAR / 8), 0.9, "triangle", 0.28, 0.02);
+      }
+    }
+  }
+  function bgmTick() {
+    var c = audio();
+    if (!c || !BGM.on) return;
+    if (BGM.next < c.currentTime) BGM.next = c.currentTime + 0.1;
+    while (BGM.next < c.currentTime + 1.2) { bgmBar(c, BGM.next); BGM.next += BAR; }
+  }
+  A.bgm = {
+    start: function () {
+      if (!bgmOk() || BGM.on) return;
+      var c = audio(); if (!c) return;
+      if (!BGM.master) { BGM.master = c.createGain(); BGM.master.connect(c.destination); }
+      BGM.master.gain.value = VOL;
+      BGM.on = true; BGM.next = 0; bgmTick();
+      BGM.timer = setInterval(bgmTick, 300);
+    },
+    stop: function () {
+      BGM.on = false;
+      if (BGM.timer) { clearInterval(BGM.timer); BGM.timer = null; }
+      if (BGM.master) BGM.master.gain.value = 0;
+    },
+    toggle: function () {
+      A.S.settings.bgm = !bgmOk(); A.save();
+      if (bgmOk()) A.bgm.start(); else A.bgm.stop();
+      return bgmOk();
+    },
+    isOn: bgmOk,
+  };
+  // 最初のタップで開始(スマホは操作がないと音を出せない)。画面が隠れたら止める。
+  document.addEventListener("pointerdown", function () {
+    if (!bgmOk()) return;
+    if (!BGM.on) A.bgm.start(); else audio();
+  }, { passive: true });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) A.bgm.stop();
+  });
 
   /* ---------- 読み上げ ---------- */
   A.reading = function (t) {
