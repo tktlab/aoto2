@@ -61,6 +61,10 @@
       gift: "",
       stickers: [],
       pass: 1,
+      tickets: 3,
+      mates: [],
+      partner: -1,
+      pity: 0,
       first: true,
     };
   }

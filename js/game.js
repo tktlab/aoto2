@@ -164,6 +164,8 @@
   var TAUNTS = ["とけるかな〜?", "ふふふ…", "わかるかな?", "かかってこい!", "この もんだい むずかしいぞ〜"];
   /* たたかう なかま: いま育てている子が うまれていれば その子、まだ たまごなら さいごに そつぎょうした子。だれも いなければ バトルなし */
   function fighterPet() {
+    var pm = S().mates && S().mates[S().partner];
+    if (pm) return pm;
     var a = activePet();
     if (formOf(a) >= 2) return a;
     var ps = S().pets;
@@ -205,7 +207,7 @@
     if (!f || !Q || !Q.foe) { Q && (Q.fx = null); return null; }
     var fx = Q.fx; Q.fx = null;
     var form = formOf(f), c = CREATURES[f.kind % CREATURES.length];
-    var fighter = h("div", { class: "fighter" }, A.creatures.el(f.kind, form));
+    var fighter = h("div", { class: "fighter", style: f.v ? { filter: TINT[f.v].f } : null }, A.creatures.el(f.kind, form));
     var foe = h("div", { class: "foe" + (fx === "appear" ? " appear" : "") + (Q.done && !fx ? " gone" : "") }, A.enemies.el(Q.foe.e.id, Q.foe.hue));
     var talk = h("div", { class: "taunt" }, Q.done && !fx ? "やられた〜!" : Q.taunt);
     var stage = h("div", { class: "battle", "aria-label": Q.foe.e.n + "が あらわれた" }, fighter, foe, talk);
@@ -319,6 +321,123 @@
     document.body.appendChild(box);
   }
 
+  /* ================= ガチャ・なかまの へや ================= */
+  var TINT = [
+    { n: "ノーマル", f: "" },
+    { n: "ひかりカラー", f: "hue-rotate(150deg) saturate(1.15)" },
+    { n: "ゆめカラー", f: "hue-rotate(-75deg) saturate(1.25)" },
+    { n: "ゴールド", f: "sepia(.85) saturate(2.8) hue-rotate(-12deg) brightness(1.08) drop-shadow(0 0 8px #ffd54a)" },
+  ];
+  var TINT_W = [60, 25, 10, 5];
+  var MATE_MAX = EVO + 10; // おとなになってから +10 まで なかよしアップ
+  function mateArt(m, form) {
+    return h("div", { class: "mate-art", style: m.v ? { filter: TINT[m.v].f } : null }, A.creatures.el(m.kind, form == null ? formOf(m) : form));
+  }
+  function mateLove(m) { return Math.max(0, Math.min(10, m.food - EVO)); }
+  function rollMate() {
+    var s = S(), x = Math.random() * 100, v = 0, acc = 0;
+    for (var i = 0; i < TINT_W.length; i++) { acc += TINT_W[i]; if (x < acc) { v = i; break; } }
+    if (v === 0 && (s.pity || 0) >= 9) v = 1; // 10回に1回は レアカラー いじょう
+    s.pity = v >= 1 ? 0 : (s.pity || 0) + 1;
+    var ws = CREATURES.map(function (c) { return c.r === 1 ? 4 : c.r === 2 ? 3 : 2; }), tot = 0;
+    ws.forEach(function (w) { tot += w; });
+    var y = Math.random() * tot, k = 0;
+    while (k < ws.length - 1 && y >= ws[k]) { y -= ws[k]; k++; }
+    return { kind: CREATURES[k].kind, v: v };
+  }
+  function pullGacha() {
+    var s = S();
+    if ((s.tickets || 0) < 1) return null;
+    s.tickets--;
+    var r = rollMate(), mates = s.mates || (s.mates = []);
+    var ex = mates.filter(function (m) { return m.kind === r.kind && m.v === r.v; })[0];
+    var out;
+    if (ex) { s.bag = (s.bag || 0) + 2; out = { dup: true, mate: ex }; }
+    else { var m = { kind: r.kind, v: r.v, name: "", food: THRESH[2] }; mates.push(m); out = { dup: false, mate: m }; }
+    A.save();
+    return out;
+  }
+  var MACHINE_SVG = '<svg viewBox="0 0 160 190" width="150" height="178" aria-hidden="true"><defs><linearGradient id="gm1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb347"/><stop offset="1" stop-color="#ff7a3d"/></linearGradient></defs><rect x="22" y="96" width="116" height="84" rx="16" fill="url(#gm1)"/><circle cx="80" cy="60" r="52" fill="#e8f7ff" stroke="#9ad4f5" stroke-width="5"/><circle cx="58" cy="44" r="12" fill="#ff7aa8"/><circle cx="92" cy="36" r="12" fill="#ffd23a"/><circle cx="104" cy="66" r="12" fill="#6fd6a4"/><circle cx="66" cy="76" r="12" fill="#7ab4ff"/><circle cx="82" cy="58" r="12" fill="#c58bff"/><rect x="56" y="124" width="48" height="36" rx="10" fill="#fff4dc"/><circle cx="80" cy="142" r="11" fill="#ff9f3d"/><rect x="40" y="108" width="80" height="8" rx="4" fill="#fff" opacity=".5"/></svg>';
+  function gachaScreen() {
+    var s = S(), busy = false;
+    var machine = h("div", { class: "gacha-machine", role: "img", "aria-label": "ガチャのきかい" });
+    machine.innerHTML = MACHINE_SVG;
+    var pull = h("button", { class: "btn big go", disabled: (s.tickets || 0) < 1 ? true : null, onclick: function () {
+      if (busy || (S().tickets || 0) < 1) return;
+      busy = true; A.sfx("tap"); machine.classList.add("shake");
+      setTimeout(function () {
+        machine.classList.remove("shake");
+        var o = pullGacha();
+        if (!o) { gachaScreen(); return; }
+        var m = o.mate, c = CREATURES[m.kind % CREATURES.length];
+        var rare = m.v;
+        var title = o.dup ? "ダブりだったよ" : rare >= 3 ? "ゴールドの なかま!!" : rare >= 1 ? "レアな なかま!" : "なかまが きたよ!";
+        var text = c.n + "(" + TINT[m.v].n + " " + "★".repeat(m.v + 1) + ")" + (o.dup ? " おなじ子だったから ごはん +2 に かえたよ" : " なかまの へやに あそびに きたよ! ごはんを あげて しんかさせよう");
+        A.confetti(rare >= 1 ? 50 : 24);
+        overlay(mateArt(m, 2), title, text, o.dup ? "ありがとう" : "やったー!", gachaScreen);
+      }, 900);
+    } }, "🎟️ ガチャを ひく! (1まい)");
+    view(topbar("ガチャ", home),
+      h("section", { class: "gacha-card" },
+        machine,
+        h("div", { class: "ticket-line" }, "🎟️ ガチャチケット ×" + (s.tickets || 0)),
+        pull,
+        (s.tickets || 0) < 1 ? h("div", { class: "note" }, "チケットは まいにち ひらくと 1まい、ミッション(3もん)クリアで 1まい もらえるよ!") : null,
+        h("div", { class: "mission-sub" }, "12しゅるいの なかま × 4つの いろ。ゴールドは 5%、10かいに 1かいは レアカラー いじょう!"),
+        h("button", { class: "btn alt", onclick: function () { A.sfx("tap"); roomScreen(); } }, "🐾 なかまの へやへ")));
+  }
+  function mateStatus(m) {
+    var f = formOf(m);
+    if (f < 3) return "こども ・ しんかまで あと " + (EVO - m.food);
+    var lv = mateLove(m);
+    return "おとな ・ なかよし " + "💗".repeat(lv) + "🤍".repeat(10 - lv);
+  }
+  function mateDialog(idx) {
+    var s = S(), m = s.mates[idx];
+    if (!m) return roomScreen();
+    var c = CREATURES[m.kind % CREATURES.length];
+    var isPartner = s.partner === idx;
+    var box;
+    var close = function () { if (box.parentNode) box.parentNode.removeChild(box); };
+    var maxed = m.food >= MATE_MAX;
+    box = h("div", { class: "overlay", role: "dialog", "aria-modal": "true" },
+      h("div", { class: "overlay-card" },
+        h("div", { class: "overlay-face mate-face" }, mateArt(m)),
+        h("h2", null, (m.name || c.n) + (isPartner ? "  🤝あいぼう" : "")),
+        h("p", null, TINT[m.v].n + " " + "★".repeat(m.v + 1) + " ・ " + (c.type === "cool" ? "⚔️かっこいい" : "💗かわいい")),
+        h("p", null, mateStatus(m)),
+        h("button", { class: "btn big feed" + ((s.bag || 0) && !maxed ? " pulse" : ""), disabled: (s.bag || 0) < 1 || maxed ? true : null, onclick: function () {
+          if ((S().bag || 0) < 1 || m.food >= MATE_MAX) return;
+          var fb = formOf(m);
+          S().bag--; m.food++; A.save(); A.sfx("good"); A.confetti(8);
+          close();
+          if (fb < 3 && formOf(m) >= 3) overlay(mateArt(m, 3), "しんかしたよ!", (m.name || c.n) + "が " + (c.type === "cool" ? "かっこよく" : "かわいく") + " しんかした!", "すごーい!", function () { mateDialog(idx); });
+          else mateDialog(idx);
+        } }, maxed ? "もう なかよしマックス!" : "🍙 ごはんを あげる  ×" + (s.bag || 0)),
+        h("button", { class: "btn big alt", onclick: function () {
+          s.partner = isPartner ? -1 : idx; A.save(); A.sfx("tap"); close(); roomScreen();
+        } }, isPartner ? "あいぼうを やめる" : "⚔️ あいぼうに する(バトルに でるよ)"),
+        h("button", { class: "btn-ghost", onclick: function () { close(); roomScreen(); } }, "とじる")));
+    document.body.appendChild(box);
+  }
+  function roomScreen() {
+    var s = S(), mates = s.mates || [];
+    var items = mates.map(function (m, i) {
+      var c = CREATURES[m.kind % CREATURES.length];
+      return h("button", { class: "z-item on mate-card t" + m.v, onclick: function () { A.sfx("tap"); mateDialog(i); } },
+        h("div", { class: "z-face cr-face" }, mateArt(m)),
+        h("small", null, (m.name || c.n) + (s.partner === i ? " 🤝" : "")),
+        h("div", { class: "z-stars" }, "★".repeat(m.v + 1) + (formOf(m) >= 3 ? " 💗" + mateLove(m) : "")));
+    });
+    view(topbar("なかまの へや", home),
+      h("div", { class: "note good" }, "🍙 ごはん ×" + (s.bag || 0) + "  ・  あつめた " + mates.length + " / " + (CREATURES.length * TINT.length)),
+      mates.length ? h("div", { class: "z-grid" }, items) : h("div", { class: "note" }, "まだ なかまが いないよ。ガチャで なかまを ふやそう!"),
+      h("div", { class: "choice-col" },
+        h("button", { class: "btn big go", onclick: function () { A.sfx("tap"); gachaScreen(); } }, "🎰 ガチャを ひく  🎟️×" + (s.tickets || 0)),
+        s.partner >= 0 && mates[s.partner] ? h("div", { class: "mission-sub" }, "あいぼう: " + (mates[s.partner].name || CREATURES[mates[s.partner].kind % CREATURES.length].n) + "(バトルに でるよ。なかよし 3いじょうで ごはんボーナス!)") : h("div", { class: "mission-sub" }, "なかまを タップして「あいぼう」にすると バトルに でるよ"),
+        h("button", { class: "btn alt", onclick: home }, "ホームに もどる")));
+  }
+
   /* ================= シール・プレゼント ================= */
   var STICKERS = [
     ["🍓", "いちご", 0], ["🍋", "レモン", 0], ["🌻", "ひまわり", 0], ["🍀", "クローバー", 0], ["🎈", "ふうせん", 0], ["🍩", "ドーナツ", 0], ["🐳", "くじら", 0],
@@ -362,7 +481,7 @@
     var s = S();
     if (s.first) return welcome();
     var giftNow = false, todayK = A.dayKey();
-    if (s.gift !== todayK) { s.gift = todayK; s.bag = (s.bag || 0) + 1; giftNow = true; A.save(); }
+    if (s.gift !== todayK) { s.gift = todayK; s.bag = (s.bag || 0) + 1; s.tickets = (s.tickets || 0) + 1; giftNow = true; A.save(); }
     var p = activePet(), f = formOf(p);
     var b0 = FORM_BOUNDS[f], b1 = FORM_BOUNDS[f + 1];
     var pct = Math.max(0, Math.min(100, Math.round(((p.food - b0) / (b1 - b0)) * 100)));
@@ -391,7 +510,7 @@
     ["pointerup", "pointerleave", "pointercancel"].forEach(function (ev) { adultBtn.addEventListener(ev, endHold); });
 
     if (giftNow) setTimeout(function () {
-      overlay("🎁", "きょうの プレゼント!", "ごはんを 1こ もらったよ。3もん クリアすると シールも もらえるよ!", "もらう!", home);
+      overlay("🎁", "きょうの プレゼント!", "ごはん 1こ と ガチャチケット 1まい もらったよ! 3もん クリアすると シールと チケットが もらえるよ!", "もらう!", home);
     }, 300);
     view(
       h("header", { class: "home-head" },
@@ -413,6 +532,9 @@
           if (ev.length) showEvents(ev, home); else home();
         } }, "🍙 ごはんを あげる  ×" + bag),
         bag ? null : h("div", { class: "mission-sub" }, "もんだいを とくと ごはんが もらえるよ!")),
+      h("section", { class: "gacha-sec" },
+        h("button", { class: "btn big gacha-btn" + ((s.tickets || 0) > 0 ? " pulse" : ""), onclick: function () { A.sfx("tap"); gachaScreen(); } }, "🎰 ガチャ  🎟️×" + (s.tickets || 0)),
+        h("button", { class: "btn alt", onclick: function () { A.sfx("tap"); roomScreen(); } }, "🐾 なかまの へや (" + (s.mates || []).length + ")")),
       h("section", { class: "mission" },
         h("div", { class: "mission-title" }, "きょうの ミッション"),
         h("div", { class: "mdots" }, dots),
@@ -590,6 +712,8 @@
       Q.fx = Q.afterTutor ? "special" : indep ? "crit" : "attack";
       var fo = S().foes || (S().foes = {}); fo[Q.foe.e.id] = (fo[Q.foe.e.id] || 0) + 1;
       Q.lastFood = indep ? 2 : 1;
+      var pmate = S().mates && S().mates[S().partner];
+      if (pmate && pmate.food - EVO >= 3 && Math.random() < 0.3) { Q.lastFood++; A.toast("🤝 あいぼうの ちからで ごはん +1!"); }
       Q.food += Q.lastFood; if (indep) Q.ok++;
       Q.newCard = beforeStars === 0;
       if (Q.newCard) Q.newCards.push(Q.skill.id);
@@ -652,8 +776,9 @@
     if (todayCount() >= GOAL && !sNow.days[tk].sticker) {
       var sid = awardSticker(sNow.streak.n > 0 && sNow.streak.n % 7 === 0 ? 1 : 0);
       sNow.days[tk].sticker = true;
-      if (sid === null) { sNow.bag = (sNow.bag || 0) + 1; stickerBlock = h("div", { class: "sticker-new pop" }, h("div", { class: "sticker-big" }, "🌟"), h("b", null, "シールを ぜんぶ あつめたよ!"), h("small", null, "ごはん +1 もらったよ")); }
-      else stickerBlock = h("div", { class: "sticker-new pop t" + STICKERS[sid][2] }, h("div", { class: "sticker-big" }, STICKERS[sid][0]), h("b", null, STICKERS[sid][1] + " の " + TIER[STICKERS[sid][2]]), h("small", null, "きょうの ミッション クリアで ゲット!"));
+      sNow.tickets = (sNow.tickets || 0) + 1;
+      if (sid === null) { sNow.bag = (sNow.bag || 0) + 1; stickerBlock = h("div", { class: "sticker-new pop" }, h("div", { class: "sticker-big" }, "🌟"), h("b", null, "シールを ぜんぶ あつめたよ!"), h("small", null, "ごはん +1 もらったよ"), h("div", { class: "ticket-get" }, "🎟️ ガチャチケット +1")); }
+      else stickerBlock = h("div", { class: "sticker-new pop t" + STICKERS[sid][2] }, h("div", { class: "sticker-big" }, STICKERS[sid][0]), h("b", null, STICKERS[sid][1] + " の " + TIER[STICKERS[sid][2]]), h("small", null, "きょうの ミッション クリアで ゲット!"), h("div", { class: "ticket-get" }, "🎟️ ガチャチケット +1"));
       A.save();
     }
     var news = (A._news || []).map(function (t) { return h("div", { class: "note good" }, t); }); A._news = [];

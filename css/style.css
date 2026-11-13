@@ -350,3 +350,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sticker-cell { font-size: 40px; width: 64px; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: #eef0f8; color: #b6bdd4; font-weight: 800; }
 .sticker-cell.t1 { box-shadow: inset 0 0 0 2px #7fb8f0; }
 .sticker-cell.t2 { box-shadow: inset 0 0 0 3px #f0a8d8; }
+
+/* ガチャ・なかま */
+.gacha-sec { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.btn.gacha-btn { background: linear-gradient(180deg, #c58bff, #8a5be0); color: #fff; box-shadow: 0 5px 0 #6a3fc0; }
+.gacha-card { text-align: center; padding: 10px 6px; }
+.gacha-machine { display: flex; justify-content: center; margin: 4px 0 6px; }
+.gacha-machine.shake svg { animation: gshake .9s ease-in-out; transform-origin: 50% 90%; }
+@keyframes gshake { 0%,100% { transform: rotate(0) } 15% { transform: rotate(-9deg) } 30% { transform: rotate(9deg) } 45% { transform: rotate(-7deg) } 60% { transform: rotate(7deg) } 80% { transform: rotate(-3deg) } }
+.ticket-line { font-size: 20px; font-weight: 900; margin: 6px 0 10px; color: #7a4cc8; }
+.ticket-get { margin-top: 6px; font-weight: 900; color: #7a4cc8; }
+.mate-art { display: inline-block; width: 100%; height: 100%; }
+.mate-face { font-size: 120px; }
+.mate-card.t1 { box-shadow: inset 0 0 0 2px #7fb8f0; }
+.mate-card.t2 { box-shadow: inset 0 0 0 2px #f0a8d8; }
+.mate-card.t3 { box-shadow: inset 0 0 0 3px #f6c93b; background: #fff8dc; }
