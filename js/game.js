@@ -227,8 +227,16 @@
     var st = s.streak;
     if (st.last !== today) {
       var gap = st.last ? A.daysBetween(st.last, today) : 99;
-      st.n = gap >= 1 && gap <= 2 ? st.n + 1 : 1; // 1日おやすみまでは続く
+      A._news = A._news || [];
+      if (gap >= 1 && gap <= 2) st.n = st.n + 1; // 1日おやすみまでは続く
+      else if (gap >= 3 && gap <= 4 && st.n > 0 && (s.pass || 0) > 0) {
+        s.pass--; st.n = st.n + 1;
+        A._news.push("🎫 おやすみ券を つかって、つづけた きろくを まもったよ!");
+      } else st.n = 1;
       st.last = today;
+      if (st.n > 0 && st.n % 7 === 0) {
+        if ((s.pass || 0) < 3) { s.pass = (s.pass || 0) + 1; A._news.push("🎫 7日つづけたごほうびに おやすみ券を 1まい ゲット!"); }
+      }
     }
   }
   function todayCount() { var d = S().days[A.dayKey()]; return d ? d.n : 0; }
@@ -311,6 +319,35 @@
     document.body.appendChild(box);
   }
 
+  /* ================= シール・プレゼント ================= */
+  var STICKERS = [
+    ["🍓", "いちご", 0], ["🍋", "レモン", 0], ["🌻", "ひまわり", 0], ["🍀", "クローバー", 0], ["🎈", "ふうせん", 0], ["🍩", "ドーナツ", 0], ["🐳", "くじら", 0],
+    ["🚀", "ロケット", 0], ["🎸", "ギター", 0], ["🍉", "すいか", 0], ["🦋", "ちょうちょ", 0], ["🌙", "おつきさま", 0], ["🔔", "ベル", 0], ["🍭", "キャンディ", 0],
+    ["🌈", "にじ", 1], ["🦄", "ユニコーン", 1], ["🐙", "タコ", 1], ["🎡", "かんらんしゃ", 1], ["🪁", "たこあげ", 1], ["🍨", "アイス", 1], ["🐲", "ドラゴン", 1],
+    ["👑", "おうかん", 2], ["🏆", "トロフィー", 2], ["💎", "ダイヤ", 2],
+  ];
+  var TIER = ["シール", "レアシール!", "スーパーレア!!"];
+  function awardSticker(minTier) {
+    var s = S(), owned = s.stickers || (s.stickers = []);
+    var r = Math.random(), tier = r < 0.7 ? 0 : r < 0.93 ? 1 : 2;
+    if (minTier && tier < minTier) tier = minTier;
+    var left = STICKERS.map(function (x, i) { return i; }).filter(function (i) { return owned.indexOf(i) < 0; });
+    if (!left.length) return null;
+    var pool = left.filter(function (i) { return STICKERS[i][2] === tier; });
+    if (!pool.length) pool = left;
+    var id = pool[Math.floor(Math.random() * pool.length)];
+    owned.push(id);
+    return id;
+  }
+  function weekRow() {
+    var s = S(), st = s.streak, today = A.dayKey();
+    var alive = st.last && A.daysBetween(st.last, today) <= 2 ? st.n : 0;
+    var lit = alive > 0 && alive % 7 === 0 ? 7 : alive % 7;
+    var dots = [];
+    for (var i = 1; i <= 7; i++) dots.push(h("span", { class: "wdot" + (i <= lit ? " on" : "") + (i === 7 ? " last" : "") }, i === 7 ? "🎁" : i <= lit ? "⭐" : String(i)));
+    return h("div", { class: "week" }, h("div", { class: "week-title" }, "7日チャレンジ  " + (lit >= 7 ? "コンプリート!" : "あと " + (7 - lit) + "日で おやすみ券!")), h("div", { class: "wdots" }, dots));
+  }
+
   /* ================= ホーム ================= */
   function homeMessage() {
     var s = S(), n = todayCount(), st = s.streak;
@@ -324,6 +361,8 @@
   function home() {
     var s = S();
     if (s.first) return welcome();
+    var giftNow = false, todayK = A.dayKey();
+    if (s.gift !== todayK) { s.gift = todayK; s.bag = (s.bag || 0) + 1; giftNow = true; A.save(); }
     var p = activePet(), f = formOf(p);
     var b0 = FORM_BOUNDS[f], b1 = FORM_BOUNDS[f + 1];
     var pct = Math.max(0, Math.min(100, Math.round(((p.food - b0) / (b1 - b0)) * 100)));
@@ -351,10 +390,13 @@
     adultBtn.addEventListener("pointerdown", startHold);
     ["pointerup", "pointerleave", "pointercancel"].forEach(function (ev) { adultBtn.addEventListener(ev, endHold); });
 
+    if (giftNow) setTimeout(function () {
+      overlay("🎁", "きょうの プレゼント!", "ごはんを 1こ もらったよ。3もん クリアすると シールも もらえるよ!", "もらう!", home);
+    }, 300);
     view(
       h("header", { class: "home-head" },
         h("div", null, h("div", { class: "hello" }, (s.name ? s.name + "くん、こんにちは!" : "こんにちは!")),
-          h("div", { class: "streak" }, "🔥 " + s.streak.n + "日つづけてる")),
+          h("div", { class: "streak" }, "🔥 " + (s.streak.last && A.daysBetween(s.streak.last, todayK) <= 2 ? s.streak.n : 0) + "日つづけてる" + ((s.pass || 0) ? "  🎫×" + s.pass : ""))),
         h("div", { class: "toggles" },
           h("button", { class: "btn-ghost icon", "aria-label": "こえ", onclick: function () { s.settings.voice = !s.settings.voice; A.save(); if (!s.settings.voice) A.stopSpeak(); home(); } }, s.settings.voice ? "🗣️" : "🤐"),
           h("button", { class: "btn-ghost icon", "aria-label": "おと", onclick: function () { s.settings.sound = !s.settings.sound; A.save(); home(); } }, s.settings.sound ? "🔊" : "🔇"),
@@ -375,6 +417,8 @@
         h("div", { class: "mission-title" }, "きょうの ミッション"),
         h("div", { class: "mdots" }, dots),
         h("button", { class: "btn big go", onclick: quickStart }, n >= GOAL ? "もっと あそぶ ▶" : "あそぶ ▶"),
+        weekRow(),
+        h("button", { class: "btn alt", onclick: function () { A.sfx("tap"); zukan("stickers"); } }, "⭐ シールちょう " + (s.stickers || []).length + " / " + STICKERS.length),
         h("div", { class: "mission-sub" }, "ぼうけんは 中1の さいしょから!"),
         h("button", { class: "btn big alt", style: { "margin-top": "10px" }, onclick: function () { A.sfx("tap"); A.write.home(); } }, "✍️ かんじ・えいたんご れんしゅう")),
       h("nav", { class: "bottom-nav" },
@@ -603,12 +647,24 @@
       return h("div", { class: "card-get pop" }, h("div", { class: "card-icon" }, sk._icon), h("small", null, sk.name));
     });
     var p = activePet();
+    var sNow = S(), tk = A.dayKey(), stickerBlock = null;
+    if (!sNow.days[tk]) sNow.days[tk] = { n: 0, ok: 0 };
+    if (todayCount() >= GOAL && !sNow.days[tk].sticker) {
+      var sid = awardSticker(sNow.streak.n > 0 && sNow.streak.n % 7 === 0 ? 1 : 0);
+      sNow.days[tk].sticker = true;
+      if (sid === null) { sNow.bag = (sNow.bag || 0) + 1; stickerBlock = h("div", { class: "sticker-new pop" }, h("div", { class: "sticker-big" }, "🌟"), h("b", null, "シールを ぜんぶ あつめたよ!"), h("small", null, "ごはん +1 もらったよ")); }
+      else stickerBlock = h("div", { class: "sticker-new pop t" + STICKERS[sid][2] }, h("div", { class: "sticker-big" }, STICKERS[sid][0]), h("b", null, STICKERS[sid][1] + " の " + TIER[STICKERS[sid][2]]), h("small", null, "きょうの ミッション クリアで ゲット!"));
+      A.save();
+    }
+    var news = (A._news || []).map(function (t) { return h("div", { class: "note good" }, t); }); A._news = [];
     view(h("section", { class: "result" },
       h("div", { class: "result-face jump" }, A.petEmoji()),
       h("h1", null, "ミッション クリア!"),
       h("p", null, Q.target + "もん クリア。ごはん +" + Q.food + " もらったよ"),
       h("p", { class: "muted" }, petName(p) + "  ごはん " + p.food + " / " + THRESH[3]),
+      stickerBlock, news.length ? h("div", null, news) : null,
       cards.length ? h("div", null, h("h3", null, "あたらしい カード"), h("div", { class: "card-row" }, cards)) : null,
+      h("p", { class: "muted" }, "あしたも くると プレゼントが もらえるよ! どんな シールが もらえるかな?"),
       h("div", { class: "choice-col" },
         h("button", { class: "btn big go", onclick: function () { if (Q.mix) quickStart(); else startMission(Q.subject, Q.focus, { pool: Q.pool, label: Q.label }); } }, "つづけて あそぶ ▶"),
         h("button", { class: "btn big alt", onclick: home }, "ホームに もどる"))));
@@ -621,7 +677,8 @@
     var tabs = h("div", { class: "tabs" },
       h("button", { class: "tab" + (tab === "pets" ? " on" : ""), onclick: function () { zukan("pets"); } }, "🐾 なかま"),
       h("button", { class: "tab" + (tab === "foes" ? " on" : ""), onclick: function () { zukan("foes"); } }, "👾 てき"),
-      h("button", { class: "tab" + (tab === "cards" ? " on" : ""), onclick: function () { zukan("cards"); } }, "🃏 カード"));
+      h("button", { class: "tab" + (tab === "cards" ? " on" : ""), onclick: function () { zukan("cards"); } }, "🃏 カード"),
+      h("button", { class: "tab" + (tab === "stickers" ? " on" : ""), onclick: function () { zukan("stickers"); } }, "⭐ シール"));
     var body;
     if (tab === "pets") {
       var gotN = 0;
@@ -637,6 +694,13 @@
           h("div", { class: "z-stars" }, done || growing ? (c.type === "cool" ? "⚔️ " : "💗 ") + "★".repeat(c.r) + "☆".repeat(3 - c.r) : ""));
       });
       body = h("div", null, h("p", { class: "muted" }, "あつめた " + gotN + " / " + CREATURES.length + "。そだてあげると ずかんに のるよ。"), h("div", { class: "z-grid" }, items));
+    } else if (tab === "stickers") {
+      var own = S().stickers || [];
+      var sitems = STICKERS.map(function (x, i) {
+        var has = own.indexOf(i) >= 0;
+        return h("div", { class: "z-item" + (has ? " on" : "") }, h("div", { class: "sticker-cell t" + x[2] }, has ? x[0] : "?"), h("small", null, has ? x[1] : "???"));
+      });
+      body = h("div", null, h("p", { class: "muted" }, "あつめた " + own.length + " / " + STICKERS.length + "。1日3もん クリアで 1まい もらえるよ。7日つづけると レアが でやすいよ!"), h("div", { class: "z-grid" }, sitems));
     } else if (tab === "foes") {
       var fo = S().foes || {}, total = 0;
       var fitems = A.enemies.list.map(function (e) {

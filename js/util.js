@@ -58,6 +58,9 @@
       write: {},
       bag: 0,
       foes: {},
+      gift: "",
+      stickers: [],
+      pass: 1,
       first: true,
     };
   }
