@@ -70,7 +70,6 @@
         Object.keys(d).forEach(function (k) {
           if (o[k] === undefined) o[k] = d[k];
         });
-        if (o.name === "あおと") o.name = "";
         return o;
       }
     } catch (e) {}
