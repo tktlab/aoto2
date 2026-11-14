@@ -632,6 +632,7 @@
         h("button", { class: "btn big go", onclick: quickStart }, n >= GOAL ? "もっと あそぶ ▶" : "あそぶ ▶"),
         weekRow(),
         h("button", { class: "btn alt", onclick: function () { A.sfx("tap"); zukan("stickers"); } }, "⭐ シールちょう " + (s.stickers || []).length + " / " + STICKERS.length),
+        h("button", { class: "btn alt", onclick: function () { A.sfx("tap"); chalMake(); } }, "📮 ともだちに ちょうせんじょう"),
         h("button", { class: "btn alt" + (missCount() ? " miss-btn" : ""), onclick: function () { A.sfx("tap"); missNote(); } }, "📕 まちがいノート (" + missCount() + ")"),
         h("div", { class: "mission-sub" }, "ぼうけんは 中1の さいしょから!"),
         h("button", { class: "btn big alt", style: { "margin-top": "10px" }, onclick: function () { A.sfx("tap"); A.write.home(); } }, "✍️ かんじ・えいたんご れんしゅう")),
@@ -716,7 +717,7 @@
   var Q = null;
   function startMission(subjectId, skill, opts) {
     opts = opts || {};
-    Q = { subject: subjectId, focus: skill, pool: opts.pool || null, label: opts.label || null, count: 0, target: GOAL, seen: {}, ok: 0, food: 0, newCards: [], helped: 0, events: [] };
+    Q = { subject: subjectId, focus: skill, pool: opts.pool || null, label: opts.label || null, count: 0, target: opts.target || GOAL, make: !!opts.make, seen: {}, ok: 0, food: 0, newCards: [], helped: 0, events: [] };
     nextQuestion();
   }
   /* いきなりスタート: 教科をぐるぐる回しながら、中1の最初(または「どこから」で決めた所)から順に出す */
@@ -735,7 +736,7 @@
       sk = Q.focus || (Q.pool ? recommendedFromList(Q.pool, true) : recommendedSkill(Q.subject));
       p = pickProblem(sk, Q.seen);
     }
-    Q.seen[p.id] = true;
+    Q.seen[p.id] = true; (Q.pids = Q.pids || []).push(p.id);
     Q.p = p; Q.skill = sk;
     Q.foe = A.enemies.forSubject(Q.subject, sk._i); Q.fx = "appear"; Q.taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
     Q.choices = A.shuffle(p.choices);
@@ -943,6 +944,117 @@
     });
   }
 
+  /* ================= ちょうせんじょう ================= */
+  var CHAL_N = 5, SITE = "https://tktlab.github.io/aoto2/";
+  function chalEncode(o) { return btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+  function chalDecode(t) {
+    try {
+      t = String(t).trim().replace(/-/g, "+").replace(/_/g, "/"); while (t.length % 4) t += "=";
+      var o = JSON.parse(decodeURIComponent(escape(atob(t))));
+      if (!o || !Array.isArray(o.i)) return null;
+      o.i = o.i.filter(function (id) { return probById[id]; }).slice(0, 10);
+      return o.i.length ? o : null;
+    } catch (e) { return null; }
+  }
+  function chalUrl(o) {
+    var base = /^https?:/.test(location.protocol) ? location.origin + location.pathname : SITE;
+    return base + "?c=" + chalEncode(o);
+  }
+  function subjectsOf(ids) {
+    var seen = {}, out = [];
+    ids.forEach(function (id) { var sb = skillMap[probById[id].skill].subject; if (!seen[sb]) { seen[sb] = 1; out.push(subjectInfo(sb).emoji + sb); } });
+    return out.join("・");
+  }
+  /* つくる: 教科を えらんで 5もん とく */
+  function chalMake() {
+    var cards = SUBJECTS.map(function (sub) {
+      return h("button", { class: "subject-card", style: { "--c": sub.color }, onclick: function () {
+        A.sfx("tap"); startMission(sub.id, null, { label: "📮 ちょうせんじょう", target: CHAL_N, make: true });
+      } }, h("div", { class: "subject-emoji" }, sub.emoji), h("div", { class: "subject-name" }, sub.id));
+    });
+    view(topbar("📮 ちょうせんじょうを つくる", home),
+      h("p", { class: "center" }, "まず じぶんで " + CHAL_N + "もん とこう。おなじ もんだいを ともだちに おくって、どっちが たくさん せいかい できるか しょうぶ!"),
+      h("div", { class: "subject-grid" }, cards),
+      h("button", { class: "btn big alt", onclick: function () {
+        var n = (S().log || []).length;
+        Q = { subject: SUBJECTS[n % SUBJECTS.length].id, mix: true, mixIdx: n, focus: null, pool: null, label: "📮 ちょうせんじょう", count: 0, target: CHAL_N, make: true, seen: {}, ok: 0, food: 0, newCards: [], helped: 0, events: [] };
+        A.sfx("tap"); nextQuestion();
+      } }, "🎲 いろんな きょうかで"));
+  }
+  /* おくる画面 */
+  function chalSend(ids, score, back) {
+    var s = S();
+    var input = h("input", { class: "name-input", maxlength: "8", value: s.chalName || s.name || "", placeholder: "ニックネーム", "aria-label": "ニックネーム" });
+    function data() {
+      var nm = (input.value || "").trim().slice(0, 8) || "ともだち";
+      s.chalName = nm; A.save();
+      var o = { v: 1, n: nm, s: score, i: ids };
+      var url = chalUrl(o);
+      var text = "📮 " + nm + " から ちょうせんじょう!\n" + subjectsOf(ids) + " " + ids.length + "もん。" + nm + " は " + score + "もん せいかい。かてるかな?\n";
+      return { text: text, url: url };
+    }
+    view(topbar("📮 ちょうせんじょうを おくる", back || home),
+      h("section", { class: "chal-card" },
+        h("div", { class: "chal-big" }, "📮"),
+        h("div", { class: "chal-score" }, ids.length + "もん中 " + score + "もん せいかい!"),
+        h("small", null, subjectsOf(ids) + "  (ヒントなしで 1かいめに あたった かず)"),
+        h("label", null, "おくる ときの なまえ", input)),
+      h("div", { class: "choice-col" },
+        h("button", { class: "btn big line-btn", onclick: function () {
+          var d = data(); A.sfx("tap");
+          location.href = "https://line.me/R/share?text=" + encodeURIComponent(d.text + d.url);
+        } }, "LINEで おくる"),
+        h("button", { class: "btn big alt", onclick: function () {
+          var d = data(); A.sfx("tap");
+          if (navigator.share) { navigator.share({ title: "AOTO ちょうせんじょう", text: d.text, url: d.url }).catch(function () {}); }
+          else copy(d.text + d.url);
+        } }, "📤 ほかの アプリで おくる"),
+        h("button", { class: "btn alt", onclick: function () { var d = data(); copy(d.text + d.url); } }, "📋 コピーする"),
+        h("button", { class: "btn-ghost", onclick: home }, "ホームに もどる")),
+      h("p", { class: "muted center" }, "アプリを いれてない ともだちでも、リンクを ひらけば すぐ あそべるよ"));
+  }
+  function copy(t) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(function () { A.toast("コピーしたよ! LINEなどに はりつけてね"); }, function () { fallback(); }); return; }
+    } catch (e) {}
+    fallback();
+    function fallback() {
+      var ta = h("textarea", { class: "export", readonly: "", rows: "4" }); ta.value = t; app.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); A.toast("コピーしたよ!"); } catch (e) { A.toast("ながおしで コピーしてね"); }
+    }
+  }
+  /* うけとる */
+  function chalIntro(o) {
+    view(h("section", { class: "chal-card intro" },
+      h("div", { class: "chal-big jump" }, "📮"),
+      h("h1", null, "ちょうせんじょうが とどいたよ!"),
+      h("p", null, h("b", null, o.n), " から " + subjectsOf(o.i) + " " + o.i.length + "もんの しょうぶ!"),
+      h("div", { class: "chal-score" }, o.n + " は " + o.s + "もん せいかい"),
+      h("p", { class: "muted" }, "ヒントなしで 1かいめに あてると 1てん。かてるかな?"),
+      h("button", { class: "btn big go pulse", onclick: function () {
+        A.sfx("tap");
+        Q = { subject: skillMap[probById[o.i[0]].skill].subject, review: o.i.slice(), chal: o, focus: null, pool: null, label: "📮 ちょうせん", count: 0, target: o.i.length, seen: {}, ok: 0, food: 0, newCards: [], helped: 0, events: [] };
+        nextQuestion();
+      } }, "ちょうせんする! ▶"),
+      h("button", { class: "btn-ghost", onclick: home }, "あとで")));
+    A.sfx("levelup");
+  }
+  function chalResultBlock() {
+    if (Q.chal) {
+      var me = Q.ok, them = Q.chal.s, nm = Q.chal.n;
+      var msg = me > them ? "🏆 かち! すごい!" : me === them ? "🤝 ひきわけ!" : "😣 まけ… つぎは かとう!";
+      return h("section", { class: "chal-card" },
+        h("div", { class: "chal-vs" }, h("div", null, h("small", null, "あなた"), h("b", null, me)), h("span", null, "VS"), h("div", null, h("small", null, nm), h("b", null, them))),
+        h("div", { class: "chal-score" }, msg),
+        h("button", { class: "btn big line-btn", onclick: function () { chalSend(Q.pids.slice(), me); } }, "📮 " + nm + " に かえしの ちょうせんじょう"),
+        S().first ? h("p", { class: "muted" }, "このアプリでは もんだいを とくと たまごが そだつよ! ホームで なまえを つけてね") : null);
+    }
+    if (Q.make) return h("section", { class: "chal-card" },
+      h("div", { class: "chal-score" }, Q.target + "もん中 " + Q.ok + "もん せいかい!"),
+      h("button", { class: "btn big line-btn pulse", onclick: function () { chalSend(Q.pids.slice(), Q.ok); } }, "📮 ともだちに ちょうせんじょうを おくる"));
+    return h("button", { class: "btn alt", onclick: function () { chalSend(Q.pids.slice(), Q.ok); } }, "📮 この もんだいで ちょうせんじょうを つくる");
+  }
+
   /* ================= けっか ================= */
   function result() {
     var cards = Q.newCards.map(function (id) {
@@ -967,10 +1079,11 @@
       h("p", null, Q.target + "もん クリア。ごはん +" + Q.food + " もらったよ"),
       h("p", { class: "muted" }, petName(p) + "  ごはん " + p.food + " / " + THRESH[3]),
       stickerBlock, news.length ? h("div", null, news) : null,
+      chalResultBlock(),
       cards.length ? h("div", null, h("h3", null, "あたらしい カード"), h("div", { class: "card-row" }, cards)) : null,
       h("p", { class: "muted" }, "あしたも くると プレゼントが もらえるよ! どんな シールが もらえるかな?"),
       h("div", { class: "choice-col" },
-        h("button", { class: "btn big go", onclick: function () { if (Q.mix) quickStart(); else startMission(Q.subject, Q.focus, { pool: Q.pool, label: Q.label }); } }, "つづけて あそぶ ▶"),
+        Q.review || Q.make ? null : h("button", { class: "btn big go", onclick: function () { if (Q.mix) quickStart(); else startMission(Q.subject, Q.focus, { pool: Q.pool, label: Q.label }); } }, "つづけて あそぶ ▶"),
         h("button", { class: "btn big alt", onclick: home }, "ホームに もどる"))));
     A.sfx("levelup"); A.confetti(30);
     A.speak("ミッション クリア! よくがんばったね");
@@ -1113,10 +1226,14 @@
 
   /* ================= 起動 ================= */
   A.start = function () {
-    try { home(); } catch (e) {
+    try {
+      var cm = /[?&]c=([^&#]+)/.exec(location.search || ""), co = cm && chalDecode(decodeURIComponent(cm[1]));
+      if (cm) { try { history.replaceState(null, "", location.pathname); } catch (e) {} }
+      if (co) chalIntro(co); else home();
+    } catch (e) {
       app.appendChild(h("pre", { class: "err" }, "エラー: " + (e && e.message)));
     }
   };
   A.core = { feed: earn, earn: earn, touchDay: touchDay, logEvent: logEvent, showEvents: showEvents, view: view, topbar: topbar, stars: stars, skillMap: skillMap, startMission: startMission, home: home, SUBJECTS: SUBJECTS, subjectInfo: subjectInfo, save: function () { A.save(); } };
-  A.debug = { skill: function (id) { return skillMap[id]; }, stars: stars, Q: function () { return Q; }, startMission: startMission, home: home, feed: growBy, view: view };
+  A.debug = { chalUrl: chalUrl, chalDecode: chalDecode, skill: function (id) { return skillMap[id]; }, stars: stars, Q: function () { return Q; }, startMission: startMission, home: home, feed: growBy, view: view };
 })();

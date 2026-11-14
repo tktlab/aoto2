@@ -427,3 +427,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .miss-item summary small { color: #888; display: block; }
 .miss-ans { font-weight: 800; margin-top: 8px; color: #1a8a4a; }
 .btn.miss-btn { border: 2px solid #ff8a8a; }
+
+/* ちょうせんじょう */
+.chal-card { background: #fff; border-radius: 22px; padding: 18px; margin: 12px 0; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.08); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.chal-card.intro { margin-top: 40px; }
+.chal-card label { width: 100%; font-weight: 700; }
+.chal-big { font-size: 64px; line-height: 1; }
+.chal-score { font-size: 22px; font-weight: 900; }
+.chal-vs { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.chal-vs div { display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+.chal-vs b { font-size: 46px; line-height: 1.1; }
+.chal-vs span { font-size: 22px; font-weight: 900; color: #e86ab0; }
+.btn.line-btn { background: linear-gradient(#2fd36a, #06b54a); color: #fff; box-shadow: 0 5px 0 #048a38; font-weight: 800; width: 100%; }
