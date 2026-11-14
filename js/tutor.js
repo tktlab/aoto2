@@ -11,9 +11,10 @@
   var FOUNDATION = { 数学: "m-int", 英語: "e-word", 国語: "j-read", 理科: "s-observe", 社会: "h-map" };
 
   /* もんだい文と どれだけ かかわるか(漢字・カタカナの ことばが いくつ かさなるか) */
+  var STOP = {}; ["意味", "答え", "問題", "正しい", "説明", "英語", "日本語", "空欄", "簡単", "文字", "近い", "表す", "合う", "選ぶ", "次の", "どれ", "記号", "言葉", "部分", "方法", "理由", "場合", "データ"].forEach(function (w) { STOP[w] = 1; });
   function relScore(q, text) {
     var words = String(q || "").match(/[一-龥ァ-ヶー]{2,}/g) || [], s = 0;
-    words.forEach(function (w) { if (String(text || "").indexOf(w) >= 0) s += w.length; });
+    words.forEach(function (w) { if (STOP[w]) return; if (String(text || "").indexOf(w) >= 0) s += w.length; });
     return s;
   }
   function bestIndex(q, arr, get) {
@@ -35,7 +36,46 @@
     return list;
   }
 
-  /* opts: { subject, skill, onPass(conceptId), onExit({done,closed,passed}) } */
+  /* けいさんの こたえは さいごだけ「？」に して、じぶんで できるように */
+  function maskAnswer(text, ans) {
+    text = String(text || ""); ans = String(ans || "");
+    if (!/[0-9]/.test(ans) || !ans) return text;
+    var vars = [ans, ans.replace(/−/g, "-"), ans.replace(/-/g, "−"), ans.replace(/\s+/g, "")];
+    vars.forEach(function (v) {
+      if (!v) return;
+      var out = "", i = 0;
+      while (true) {
+        var k = text.indexOf(v, i);
+        if (k < 0) { out += text.slice(i); break; }
+        var before = text[k - 1] || "", after = text[k + v.length] || "";
+        var pre = text.slice(0, k).replace(/\s+$/, ""), lastc = pre.slice(-1);
+        var isResult = /[=＝]/.test(lastc) || pre === "";
+        var glued = /[0-9.a-z]/.test(after) && /[0-9a-z]$/.test(v);
+        out += text.slice(i, k) + (isResult && !glued ? "？" : v);
+        i = k + v.length;
+      }
+      text = out;
+    });
+    return text;
+  }
+  function focusPanels(problem, c0, qtext) {
+    var list = [];
+    var tip = (problem.hints || []).filter(function (x) { return x && x.indexOf("問題文の条件") < 0 && x !== problem.explanation && x.indexOf(problem.answer) < 0; })[0];
+    if (tip) list.push({ head: "この もんだいの ポイント", text: tip });
+    var way = maskAnswer(problem.explanation, problem.answer);
+    if (way && way !== tip) list.push({ head: /[0-9]/.test(problem.answer) && way !== problem.explanation ? "とき方の みちすじ(さいごの「？」を かんがえよう)" : "とき方", text: way });
+    if (c0 && c0.examples) {
+      var bi = -1, bs = 0;
+      c0.examples.forEach(function (x, i) { var sc = relScore(qtext, x); if (sc > bs) { bs = sc; bi = i; } });
+      if (bi >= 0) {
+        var exT = c0.examples[bi], same = /[0-9]/.test(problem.answer) && exT.indexOf(problem.answer) >= 0 && maskAnswer(exT, problem.answer) !== exT;
+        if (!same) list.push({ head: "にた れいで 見よう", text: exT, visual: c0.visuals ? c0.visuals[bi] : null });
+      }
+    }
+    return list;
+  }
+
+  /* opts: { subject, skill, onPass(conceptId), onExit({done,closed,passed,reveal}) } */
   A.tutorStart = function (root, problem, opts) {
     var first = D.skillConcept[problem.skill] || FOUNDATION[opts.subject] || "m-int";
     if (!concepts[first]) first = FOUNDATION[opts.subject] || "m-int";
@@ -44,6 +84,7 @@
     var chk0 = bestIndex(qtext, c0.checks, function (x) { return x.question; });
     var tip = (problem.hints || []).filter(function (x) { return x && x.indexOf("問題文の条件") < 0 && x !== problem.explanation && x.indexOf(problem.answer) < 0; })[0] || null;
     var frames = [{ cid: first, piece: 0, ex: ex0, ex0: ex0, chk0: chk0 }];
+    var fp = focusPanels(problem, c0, qtext), focus = fp.length > 0, fstep = 0;
     var check = null; // {variant, answer, correct, submitted, rev}
     var chooser = false;
     var passed = 0;
@@ -123,6 +164,24 @@
           A.S.settings.voice = !A.S.settings.voice; A.save(); if (!A.S.settings.voice) A.stopSpeak(); render();
         } }, A.S.settings.voice ? "🔊" : "🔇"));
       var body;
+      var qbox = h("div", { class: "tq" }, h("small", null, "いま といている もんだい"), h("div", null, problem.question));
+
+      if (focus) {
+        var fpn = fp[fstep], lastF = fstep === fp.length - 1;
+        var fnav = [h("button", { class: "btn small", "aria-label": "もういちど きく", onclick: function () { if (!A.speak(fpn.text, true)) A.toast("このたんまつは こえが でないよ"); } }, "🔊"),
+          h("button", { class: "btn small", disabled: fstep === 0 ? true : null, onclick: function () { fstep--; render(true); } }, "◀")];
+        if (!lastF) fnav.push(h("button", { class: "btn big grow", onclick: function () { fstep++; render(true); } }, "つぎ ▶"));
+        var facts = [h("div", { class: "nav-row" }, fnav)];
+        if (lastF) facts.push(h("button", { class: "btn big good", onclick: function () { A.stopSpeak(); passed++; opts.onExit({ done: true, passed: passed, focus: true }); } }, "😊 わかった! もんだいに もどる"));
+        facts.push(h("button", { class: "btn big alt", onclick: function () { focus = false; rev++; render(true); } }, "🪜 まだ わからない → きほんから せつめい"));
+        facts.push(h("button", { class: "btn-ghost", onclick: function () { A.stopSpeak(); opts.onExit({ reveal: true, passed: passed }); } }, "📖 こたえを 見て つぎへ(まちがいノートに いれるよ)"));
+        body = h("section", { class: "card" },
+          h("div", { class: "dots" }, fp.map(function (_, i) { return h("span", { class: "dot-i" + (i === fstep ? " on" : i < fstep ? " past" : "") }); })),
+          guide(fpn.head), h("p", { class: "big-text" }, fpn.text), fpn.visual ? A.renderVisual(fpn.visual) : null, facts);
+        root.appendChild(top); root.appendChild(qbox); root.appendChild(body);
+        if (autoSpeak !== false) speakPanel(fpn);
+        return;
+      }
 
       if (chooser) {
         body = h("section", { class: "card" },
@@ -169,7 +228,7 @@
         return;
       }
 
-      var list = pieces(c, f.ex, f === frames[0] && f.ex === f.ex0 ? tip : null);
+      var list = pieces(c, f.ex, !fp.length && f === frames[0] && f.ex === f.ex0 ? tip : null);
       if (f.piece >= list.length) f.piece = list.length - 1;
       var p = list[f.piece];
       var last = f.piece === list.length - 1;
@@ -206,12 +265,13 @@
         guide(p.head),
         h("p", { class: "big-text" }, p.text),
         vis, dots, actions);
-      root.appendChild(top); root.appendChild(ladder()); root.appendChild(body);
+      root.appendChild(top); root.appendChild(qbox); root.appendChild(ladder()); root.appendChild(body);
       if (autoSpeak !== false) speakPanel(p);
     }
 
     render();
   };
 
+  A.tutorPanels = function (pr) { var c = concepts[D.skillConcept[pr.skill]]; return focusPanels(pr, c, pr.question); };
   A.tutorConceptTitle = function (id) { return concepts[id] ? concepts[id].title : id; };
 })();

@@ -1058,6 +1058,7 @@
         A.save();
       },
       onExit: function (res) {
+        if (res.reveal) { giveUp(); A.save(); renderQuiz(); return; }
         Q.limit = Q.wrong.length + 1; // 学んだあとで もう1かい ちょうせん(まちがえたのは のこす)
         Q.afterTutor = true;
         var events = Q.events; Q.events = [];
