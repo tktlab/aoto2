@@ -789,10 +789,69 @@
       .replace(/\bcan't\b/g, "cannot").replace(/\bcan not\b/g, "cannot").replace(/\bwon't\b/g, "will not").replace(/n't\b/g, " not");
     return t.replace(/[.,!?]/g, " ").replace(/\s+/g, " ").trim();
   }
+  /* じゅんばんが ちがうだけの こたえ(3x+5 と 5+3x、x=7 と 7=x、ab と ba)も せいかいにする */
+  function splitTop(s, seps) {
+    var out = [], d = 0, cur = "";
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i];
+      if (ch === "(") d++; else if (ch === ")") d--;
+      if (d === 0 && seps.indexOf(ch) >= 0 && (ch !== "-" && ch !== "+" || cur !== "")) { out.push(cur); out.push(ch); cur = ""; continue; }
+      cur += ch;
+    }
+    out.push(cur);
+    return out;
+  }
+  function canonTerm(t) {
+    if (t.indexOf("×") >= 0) {
+      var fs = splitTop(t, "×").filter(function (x, i) { return i % 2 === 0; });
+      return fs.map(canonTerm).sort().join("×");
+    }
+    var m = /^([0-9.]*)(.*)$/.exec(t), coef = m[1], rest = m[2], facs = [], i = 0;
+    while (i < rest.length) {
+      var ch = rest[i];
+      if (/[a-zπ]/.test(ch)) { var f = ch; i++; if (/[²³]/.test(rest[i] || "")) f += rest[i++]; facs.push(f); continue; }
+      if (ch === "(") {
+        var d = 0, j = i;
+        for (; j < rest.length; j++) { if (rest[j] === "(") d++; else if (rest[j] === ")") { d--; if (!d) break; } }
+        if (j >= rest.length) return t;
+        var g2 = "(" + canonSide(rest.slice(i + 1, j)) + ")"; i = j + 1;
+        if (/[²³]/.test(rest[i] || "")) g2 += rest[i++];
+        facs.push(g2); continue;
+      }
+      return t; // わり算・べき などが まざると そのまま
+    }
+    return coef + facs.sort().join("");
+  }
+  function canonSide(s) {
+    var parts = splitTop(s, "+-"), terms = [], sign = "+";
+    for (var i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) { sign = parts[i]; continue; }
+      var t = parts[i];
+      if (t === "") continue;
+      if (t[0] === "-" || t[0] === "+") { sign = sign === t[0] ? "+" : "-"; t = t.slice(1); }
+      terms.push(sign + canonTerm(t)); sign = "+";
+    }
+    return terms.sort().join("");
+  }
+  function canonExpr(s) {
+    var p = splitTop(s, "=≦≧<>");
+    if (p.length === 3) {
+      var L = canonSide(p[0]), op = p[1], R = canonSide(p[2]);
+      if (op === "≧") { op = "≦"; var t = L; L = R; R = t; }
+      else if (op === ">") { op = "<"; t = L; L = R; R = t; }
+      else if (op === "=" && R < L) { t = L; L = R; R = t; }
+      return L + op + R;
+    }
+    if (p.length === 1) return canonSide(s);
+    return s;
+  }
   function judgeTyped(p, v) {
     if (typeKind(p) === "en") return normEn(v) === normEn(p.answer);
-    var x = normNum(v), full = normNum(p.answer);
-    return x === full || x === numCore(p.answer);
+    var x = normNum(v), full = normNum(p.answer), core = numCore(p.answer);
+    if (x === full || x === core) return true;
+    if (/:|,/.test(core)) return false; // 比や ならびは じゅんばんも だいじ
+    var xc = x.replace(UNIT_RE, "");
+    try { return canonExpr(xc) === canonExpr(core); } catch (e) { return false; }
   }
   var KEYS = [["7", "8", "9", "−", "⌫"], ["4", "5", "6", "+", "/"], ["1", "2", "3", "×", "÷"], ["0", ".", "x", "y", "a"], ["b", "(", ")", "=", "π"], ["<", ">", "≦", "≧", ":"], ["²", "³", ","]];
   var KEYSET = {}; KEYS.forEach(function (r) { r.forEach(function (k) { if (k !== "⌫") KEYSET[k === "−" ? "-" : k] = 1; }); });
