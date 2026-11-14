@@ -65,6 +65,7 @@
       mates: [],
       partner: -1,
       pity: 0,
+      miss: {},
       first: true,
     };
   }

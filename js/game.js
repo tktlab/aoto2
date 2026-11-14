@@ -24,7 +24,8 @@
       .sort(function (a, b) { return a.stage - b.stage || a._i - b._i; });
     bySubject[sub.id].forEach(function (s, i) { s._icon = sub.icons[i % sub.icons.length]; });
   });
-  D.problems.forEach(function (p) { (probsBySkill[p.skill] = probsBySkill[p.skill] || []).push(p); });
+  var probById = {};
+  D.problems.forEach(function (p) { probById[p.id] = p; (probsBySkill[p.skill] = probsBySkill[p.skill] || []).push(p); });
   function subjectInfo(id) { return SUBJECTS.filter(function (s) { return s.id === id; })[0]; }
   var GOAL = 3; // 1日のミッション問題数
 
@@ -631,6 +632,7 @@
         h("button", { class: "btn big go", onclick: quickStart }, n >= GOAL ? "もっと あそぶ ▶" : "あそぶ ▶"),
         weekRow(),
         h("button", { class: "btn alt", onclick: function () { A.sfx("tap"); zukan("stickers"); } }, "⭐ シールちょう " + (s.stickers || []).length + " / " + STICKERS.length),
+        h("button", { class: "btn alt" + (missCount() ? " miss-btn" : ""), onclick: function () { A.sfx("tap"); missNote(); } }, "📕 まちがいノート (" + missCount() + ")"),
         h("div", { class: "mission-sub" }, "ぼうけんは 中1の さいしょから!"),
         h("button", { class: "btn big alt", style: { "margin-top": "10px" }, onclick: function () { A.sfx("tap"); A.write.home(); } }, "✍️ かんじ・えいたんご れんしゅう")),
       h("nav", { class: "bottom-nav" },
@@ -688,6 +690,28 @@
       h("button", { class: "btn big go", onclick: function () { startMission(subId, null); } }, "おすすめで すすむ ▶"));
   }
 
+  /* ================= まちがいノート ================= */
+  function missNote() {
+    var m = S().miss || {}, ids = Object.keys(m).filter(function (k) { return probById[k]; }).sort(function (a, b) { return m[b] - m[a]; });
+    var items = ids.map(function (id) {
+      var p = probById[id], sk = skillMap[p.skill], sub = subjectInfo(sk.subject);
+      return h("details", { class: "miss-item", style: { "--c": sub.color } },
+        h("summary", null, h("small", null, sub.emoji + " " + sk.subject + " ▸ " + sk.name), h("div", null, p.question)),
+        h("div", { class: "miss-ans" }, "こたえ: " + p.answer), h("p", { class: "muted" }, p.explanation));
+    });
+    view(topbar("📕 まちがいノート", home),
+      ids.length ? h("div", null,
+        h("p", { class: "center" }, "まちがえた もんだいが " + ids.length + "もん あるよ。ヒントなしで せいかいすると ノートから きえるよ!"),
+        h("button", { class: "btn big go", onclick: function () {
+          A.sfx("tap");
+          var pick = A.shuffle(ids.slice()).slice(0, Math.min(GOAL, ids.length));
+          Q = { subject: skillMap[probById[pick[0]].skill].subject, review: pick, focus: null, pool: null, label: "📕 ふくしゅう", count: 0, target: pick.length, seen: {}, ok: 0, food: 0, newCards: [], helped: 0, events: [] };
+          nextQuestion();
+        } }, "🔁 ふくしゅう スタート (" + Math.min(GOAL, ids.length) + "もん)"),
+        h("div", { class: "miss-list" }, items))
+      : h("div", { class: "note good" }, "まちがえた もんだいは まだ ないよ。まちがえると ここに たまって、あとで ふくしゅう できるよ!"));
+  }
+
   /* ================= ミッション(クイズ) ================= */
   var Q = null;
   function startMission(subjectId, skill, opts) {
@@ -704,15 +728,62 @@
   }
   function nextQuestion() {
     if (Q.mix && Q.count > 0) { Q.mixIdx++; Q.subject = SUBJECTS[Q.mixIdx % SUBJECTS.length].id; }
-    var sk = Q.focus || (Q.pool ? recommendedFromList(Q.pool, true) : recommendedSkill(Q.subject));
-    var p = pickProblem(sk, Q.seen);
+    var sk, p;
+    if (Q.review) {
+      p = probById[Q.review[Q.count]]; sk = skillMap[p.skill]; Q.subject = sk.subject;
+    } else {
+      sk = Q.focus || (Q.pool ? recommendedFromList(Q.pool, true) : recommendedSkill(Q.subject));
+      p = pickProblem(sk, Q.seen);
+    }
     Q.seen[p.id] = true;
     Q.p = p; Q.skill = sk;
     Q.foe = A.enemies.forSubject(Q.subject, sk._i); Q.fx = "appear"; Q.taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
     Q.choices = A.shuffle(p.choices);
-    Q.writing = true; Q.wrong = []; Q.hints = 0; Q.helped = false; Q.done = false; Q.correct = null; Q.afterTutor = false;
+    Q.typing = canType(p); Q.writing = !Q.typing; Q.wrong = []; Q.limit = 2; Q.hints = 0; Q.helped = false; Q.done = false; Q.correct = null; Q.afterTutor = false;
     renderQuiz();
   }
+  /* ===== 英語は キーボードで うって こたえる ===== */
+  function canType(p) { return Q.subject === "英語" && /^[A-Za-z0-9 '’.,?!\-]+$/.test(p.answer); }
+  function normEn(t) {
+    t = String(t || "").normalize("NFKC").replace(/[’‘`]/g, "'").toLowerCase();
+    t = t.replace(/\bi'm\b/g, "i am").replace(/\byou're\b/g, "you are").replace(/\bhe's\b/g, "he is").replace(/\bshe's\b/g, "she is")
+      .replace(/\bit's\b/g, "it is").replace(/\bthat's\b/g, "that is").replace(/\bwe're\b/g, "we are").replace(/\bthey're\b/g, "they are")
+      .replace(/\bcan't\b/g, "cannot").replace(/\bcan not\b/g, "cannot").replace(/\bwon't\b/g, "will not").replace(/n't\b/g, " not");
+    return t.replace(/[.,!?]/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function typeCard(p) {
+    var inp = h("input", { class: "type-input", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "ここに えいごで うってね", "aria-label": "こたえを うつ" });
+    var msg = h("div", { class: "type-msg" });
+    function judge() {
+      var v = inp.value.trim();
+      if (!v) { A.toast("えいごで うってみよう!"); inp.focus(); return; }
+      if (normEn(v) === normEn(p.answer)) { answer(p.answer); return; }
+      if (Q.wrong.indexOf("⌨" + normEn(v)) >= 0) { A.toast("さっきと おなじ こたえだよ"); return; }
+      missOne("⌨" + normEn(v));
+    }
+    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); judge(); } });
+    setTimeout(function () { try { inp.focus(); } catch (e) {} }, 60);
+    return h("div", { class: "answer-card" }, inp,
+      h("button", { class: "btn big go", onclick: judge }, "こたえあわせ ▶"), msg);
+  }
+  /* まちがい: 2かい まちがえたら こたえを みせて つぎへ(じゅんばんに おすだけで すすめないように) */
+  function missOne(tag) {
+    var r = rec(Q.skill.id);
+    if (Q.wrong.length === 0) r.ng++;
+    Q.wrong.push(tag); Q.fx = "counter"; A.sfx("ng");
+    if (Q.wrong.length >= Q.limit) giveUp();
+    A.save(); renderQuiz();
+  }
+  function giveUp() {
+    var p = Q.p;
+    Q.done = true; Q.correct = false; Q.count++; Q.lastFood = 0; Q.newCard = false; Q.typing = false; Q.writing = false;
+    addMiss(p.id);
+    touchDay(true);
+    logEvent({ t: Date.now(), pid: p.id, skill: Q.skill.id, subject: Q.subject, ok: false, help: Q.helped, wrong: Q.wrong.length });
+  }
+  function addMiss(pid) { var m = S().miss || (S().miss = {}); m[pid] = Date.now(); }
+  function missCount() { return Object.keys(S().miss || {}).filter(function (k) { return probById[k]; }).length; }
+
   function renderQuiz() {
     var p = Q.p, sub = subjectInfo(Q.subject), pr = [];
     var stage = battleStage();
@@ -730,6 +801,20 @@
         b.textContent = "🔊 よんでるよ…";
         setTimeout(function () { b.textContent = "🔊 よんで"; }, 1800);
       } }, "🔊 よんで"));
+    if (Q.typing && !Q.done) {
+      var tk = [head, stage, qcard];
+      if (Q.afterTutor) tk.push(h("div", { class: "note good" }, "さっき おぼえたことで もういちど ちょうせん!"));
+      if (Q.wrong.length) tk.push(h("div", { class: "feedback soft" }, h("div", { class: "fb-title" }, "おしい! もう1かい"), h("p", null, "つぎ まちがえると こたえが でるよ。スペルを たしかめてね")));
+      tk.push(h("div", { class: "note good" }, "⌨️ えいごで うって こたえよう(大文字・小文字は どちらでも OK)"), typeCard(p));
+      if (Q.hints > 0) tk.push(h("div", { class: "hintbox" }, p.hints.slice(0, Q.hints).map(function (t, i) { return h("p", null, "💡 ヒント" + (i + 1) + ": " + t); })));
+      var tt = [];
+      if (Q.hints < p.hints.length) tt.push(h("button", { class: "btn big alt", onclick: function () { Q.hints++; Q.helped = true; A.sfx("pop"); renderQuiz(); } }, "💡 ヒント"));
+      tt.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.typing = false; Q.helped = true; renderQuiz(); } }, "👆 えらんで こたえる"));
+      tt.push(h("button", { class: "btn big help" + (Q.wrong.length ? " pulse" : ""), onclick: openTutor }, "😵 わからない"));
+      tk.push(h("div", { class: "tool-row" }, tt));
+      view.apply(null, tk);
+      return;
+    }
     if (Q.writing && !Q.done) {
       var wcard = A.write.answerCard({
         kind: "free", text: p.answer, shown: p.hints.slice(0, Q.hints), hints: p.hints.slice(Q.hints),
@@ -737,8 +822,7 @@
         onStuck: openTutor,
         onJudge: function (res) {
           if (res === true) { Q.writing = false; answer(p.answer); return; }
-          if (Q.wrong.length === 0) rec(Q.skill.id).ng++;
-          Q.wrong.push("✍" + Date.now()); Q.helped = true; Q.writing = false; Q.fx = "counter"; A.sfx("ng"); A.save(); renderQuiz();
+          Q.helped = true; Q.writing = false; missOne("✍" + Date.now());
         },
       });
       var wk = [head, stage, qcard];
@@ -758,7 +842,13 @@
     if (Q.afterTutor && !Q.done) kids.splice(1, 0, h("div", { class: "note good" }, "さっき おぼえたことで もういちど ちょうせん!"));
     if (stage) kids.splice(1, 0, stage);
 
-    if (Q.done) {
+    if (Q.done && !Q.correct) {
+      kids.push(h("div", { class: "feedback miss" },
+        h("div", { class: "fb-title" }, "ざんねん… こたえは「" + p.answer + "」"),
+        h("p", null, p.explanation),
+        h("p", { class: "gain" }, "📕 まちがいノートに いれたよ。あとで ふくしゅうしよう!"),
+        h("button", { class: "btn big go", onclick: afterAnswer }, Q.count >= Q.target ? "けっかを 見る ▶" : "つぎへ ▶")));
+    } else if (Q.done) {
       var indep = Q.correct && !Q.helped && Q.wrong.length === 0;
       kids.push(h("div", { class: "feedback good" },
         h("div", { class: "fb-title" }, indep ? "🎉 ばっちり!" : "⭕ できたね!"),
@@ -769,7 +859,7 @@
       if (Q.wrong.length) {
         kids.push(h("div", { class: "feedback soft" },
           h("div", { class: "fb-title" }, "おしい! だいじょうぶ"),
-          h("p", null, Q.wrong.length >= 2 ? "むずかしいときは「わからない」を おしてね。いっしょに もどって かんがえよう!" : "もういちど えらんでみよう。ヒントも あるよ。")));
+          h("p", null, "あと 1かい まちがえると こたえが でるよ。わからないときは「わからない」で いっしょに かんがえよう!")));
       }
       if (Q.hints > 0) {
         kids.push(h("div", { class: "hintbox" }, p.hints.slice(0, Q.hints).map(function (t, i) {
@@ -777,14 +867,15 @@
         })));
       }
       var tools = [];
-      tools.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.writing = true; renderQuiz(); } }, "✍️ かいて こたえる"));
+      if (canType(p)) tools.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.typing = true; renderQuiz(); } }, "⌨️ うって こたえる"));
+      else tools.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.writing = true; renderQuiz(); } }, "✍️ かいて こたえる"));
       if (Q.hints < p.hints.length) {
         tools.push(h("button", { class: "btn big alt", onclick: function () {
           Q.hints++; Q.helped = true; A.sfx("pop"); renderQuiz();
           if (S().settings.voice) A.speak(p.hints[Q.hints - 1]);
         } }, "💡 ヒント"));
       }
-      tools.push(h("button", { class: "btn big help" + (Q.wrong.length >= 2 ? " pulse" : ""), onclick: openTutor }, "😵 わからない"));
+      tools.push(h("button", { class: "btn big help" + (Q.wrong.length >= 1 ? " pulse" : ""), onclick: openTutor }, "😵 わからない"));
       kids.push(h("div", { class: "tool-row" }, tools));
     }
     view.apply(null, kids);
@@ -812,12 +903,10 @@
       Q.events = Q.events.concat(earn(Q.lastFood));
       A.save();
       A.sfx("good"); A.confetti(indep ? 22 : 10);
-    } else {
-      if (Q.wrong.length === 0) r.ng++;
-      Q.wrong.push(c);
-      Q.fx = "counter";
-      A.sfx("ng");
+      if (Q.wrong.length || Q.helped) addMiss(p.id); else if (S().miss) delete S().miss[p.id];
       A.save();
+    } else {
+      missOne(c); return;
     }
     renderQuiz();
   }
@@ -845,7 +934,7 @@
         A.save();
       },
       onExit: function (res) {
-        Q.wrong = []; // 学んだあとで、もう一度ぜんぶ選べる
+        Q.limit = Q.wrong.length + 1; // 学んだあとで もう1かい ちょうせん(まちがえたのは のこす)
         Q.afterTutor = true;
         var events = Q.events; Q.events = [];
         if (res.done) A.confetti(20);
