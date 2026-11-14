@@ -455,3 +455,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .rival-hp .hpbar { flex: 1; height: 10px; background: #eee; border-radius: 6px; overflow: hidden; }
 .rival-hp .hpfill { height: 100%; background: linear-gradient(90deg, #ff6b6b, #ffb43a); transition: width .5s; }
 .bet { background: #fff7e0; border-radius: 12px; padding: 8px 10px; font-size: 13px; font-weight: 700; }
+
+.numpad { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.np-disp { min-height: 56px; border: 3px solid #5b8def; border-radius: 16px; background: #fff; font-size: 30px; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 4px 10px; letter-spacing: 1px; word-break: break-all; }
+.np-disp.empty::after { content: "こたえ"; color: #bbb; font-size: 18px; }
+.np-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.np-key { font: inherit; font-size: 19px; font-weight: 800; padding: 7px 0; border-radius: 12px; border: 0; background: #eef2ff; color: #2b3a67; box-shadow: 0 3px 0 #c9d3f3; }
+.np-key.num { background: #fff; box-shadow: 0 3px 0 #cfd6e6; }
+.np-key.del { background: #ffe4e4; color: #c33; }
+.np-key:active { transform: translateY(2px); box-shadow: none; }

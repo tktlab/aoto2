@@ -763,11 +763,25 @@
     Q.p = p; Q.skill = sk;
     Q.foe = A.enemies.forSubject(Q.subject, sk._i); Q.fx = "appear"; Q.taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
     Q.choices = A.shuffle(p.choices);
-    Q.typing = canType(p); Q.writing = !Q.typing; Q.wrong = []; Q.limit = 2; Q.hints = 0; Q.helped = false; Q.done = false; Q.correct = null; Q.afterTutor = false;
+    Q.typing = canType(p); Q.writing = !Q.typing && !isChal(); Q.wrong = []; Q.limit = 2; Q.hints = 0; Q.helped = false; Q.done = false; Q.correct = null; Q.afterTutor = false;
     renderQuiz();
   }
-  /* ===== 英語は キーボードで うって こたえる ===== */
-  function canType(p) { return Q.subject === "英語" && /^[A-Za-z0-9 '’.,?!\-]+$/.test(p.answer); }
+  /* ===== うって こたえる(英語=キーボード、すうじ・しき=すうじパッド)。じどうで まるつけ ===== */
+  var UNIT_RE = /(m\/s|m\/秒|km\/h|g\/cm³|cm²|cm³|cm|km|kg|mL|m²|m³|m|g|L|N|W|V|A|人|円|個|本|分|秒|時間|回転|回|組|度|°|%|倍|歳|ページ|枚|点)$/;
+  var NUM_RE = /^[0-9a-z\-+\/.()=<>≦≧π²³×÷:,]+$/;
+  function normNum(t) {
+    t = String(t || "").replace(/²/g, "\u0001").replace(/³/g, "\u0002").normalize("NFKC").replace(/\u0001/g, "²").replace(/\u0002/g, "³").replace(/[−‐–ー―]/g, "-").replace(/\s+/g, "").replace(/\*/g, "×").replace(/<=/g, "≦").replace(/>=/g, "≧").toLowerCase();
+    return t;
+  }
+  function numCore(ans) { return normNum(ans).replace(UNIT_RE, ""); }
+  function isChal() { return !!(Q && (Q.make || Q.chal)); }
+  function typeKind(p) {
+    if (Q.subject === "英語" && /^[A-Za-z0-9 '’.,?!\-]+$/.test(p.answer)) return "en";
+    var c = numCore(p.answer);
+    if (c && /[0-9]/.test(c) && (Q.subject === "数学" || !/[a-z]/.test(c)) && c.split("").every(function (ch) { return KEYSET[ch]; })) return "num";
+    return false;
+  }
+  function canType(p) { return !!typeKind(p); }
   function normEn(t) {
     t = String(t || "").normalize("NFKC").replace(/[’‘`]/g, "'").toLowerCase();
     t = t.replace(/\bi'm\b/g, "i am").replace(/\byou're\b/g, "you are").replace(/\bhe's\b/g, "he is").replace(/\bshe's\b/g, "she is")
@@ -775,20 +789,46 @@
       .replace(/\bcan't\b/g, "cannot").replace(/\bcan not\b/g, "cannot").replace(/\bwon't\b/g, "will not").replace(/n't\b/g, " not");
     return t.replace(/[.,!?]/g, " ").replace(/\s+/g, " ").trim();
   }
+  function judgeTyped(p, v) {
+    if (typeKind(p) === "en") return normEn(v) === normEn(p.answer);
+    var x = normNum(v), full = normNum(p.answer);
+    return x === full || x === numCore(p.answer);
+  }
+  var KEYS = [["7", "8", "9", "−", "⌫"], ["4", "5", "6", "+", "/"], ["1", "2", "3", "×", "÷"], ["0", ".", "x", "y", "a"], ["b", "(", ")", "=", "π"], ["<", ">", "≦", "≧", ":"], ["²", "³", ","]];
+  var KEYSET = {}; KEYS.forEach(function (r) { r.forEach(function (k) { if (k !== "⌫") KEYSET[k === "−" ? "-" : k] = 1; }); });
+  function numPad(onEnter) {
+    var val = "", disp = h("div", { class: "np-disp" }, "");
+    function paint() { disp.textContent = val || " "; disp.classList.toggle("empty", !val); }
+    var grid = h("div", { class: "np-grid" }, KEYS.map(function (row) {
+      return row.map(function (k) {
+        return h("button", { class: "np-key" + (k === "⌫" ? " del" : /[0-9]/.test(k) ? " num" : ""), onclick: function () {
+          A.sfx("tap");
+          if (k === "⌫") val = val.slice(0, -1); else if (val.length < 24) val += k;
+          paint();
+        } }, k);
+      });
+    }));
+    paint();
+    return { el: h("div", { class: "numpad" }, disp, grid), get: function () { return val; }, clear: function () { val = ""; paint(); } };
+  }
   function typeCard(p) {
-    var inp = h("input", { class: "type-input", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "ここに えいごで うってね", "aria-label": "こたえを うつ" });
-    var msg = h("div", { class: "type-msg" });
+    var kind = typeKind(p), inp, pad;
     function judge() {
-      var v = inp.value.trim();
-      if (!v) { A.toast("えいごで うってみよう!"); inp.focus(); return; }
-      if (normEn(v) === normEn(p.answer)) { answer(p.answer); return; }
-      if (Q.wrong.indexOf("⌨" + normEn(v)) >= 0) { A.toast("さっきと おなじ こたえだよ"); return; }
-      missOne("⌨" + normEn(v));
+      var v = (kind === "num" ? pad.get() : inp.value).trim();
+      if (!v) { A.toast(kind === "num" ? "したの ボタンで うってね!" : "えいごで うってみよう!"); return; }
+      if (judgeTyped(p, v)) { answer(p.answer); return; }
+      var tag = "⌨" + (kind === "num" ? normNum(v) : normEn(v));
+      if (Q.wrong.indexOf(tag) >= 0) { A.toast("さっきと おなじ こたえだよ"); return; }
+      missOne(tag);
     }
+    if (kind === "num") {
+      pad = numPad(judge);
+      return h("div", { class: "answer-card" }, pad.el, h("button", { class: "btn big go", onclick: judge }, "こたえあわせ ▶"));
+    }
+    inp = h("input", { class: "type-input", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "ここに えいごで うってね", "aria-label": "こたえを うつ" });
     inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); judge(); } });
     setTimeout(function () { try { inp.focus(); } catch (e) {} }, 60);
-    return h("div", { class: "answer-card" }, inp,
-      h("button", { class: "btn big go", onclick: judge }, "こたえあわせ ▶"), msg);
+    return h("div", { class: "answer-card" }, inp, h("button", { class: "btn big go", onclick: judge }, "こたえあわせ ▶"));
   }
   /* まちがい: 2かい まちがえたら こたえを みせて つぎへ(じゅんばんに おすだけで すすめないように) */
   function missOne(tag) {
@@ -828,12 +868,13 @@
     if (Q.typing && !Q.done) {
       var tk = [head, stage, qcard];
       if (Q.afterTutor) tk.push(h("div", { class: "note good" }, "さっき おぼえたことで もういちど ちょうせん!"));
-      if (Q.wrong.length) tk.push(h("div", { class: "feedback soft" }, h("div", { class: "fb-title" }, "おしい! もう1かい"), h("p", null, "つぎ まちがえると こたえが でるよ。スペルを たしかめてね")));
-      tk.push(h("div", { class: "note good" }, "⌨️ えいごで うって こたえよう(大文字・小文字は どちらでも OK)"), typeCard(p));
+      if (Q.wrong.length) tk.push(h("div", { class: "feedback soft" }, h("div", { class: "fb-title" }, "おしい! もう1かい"), h("p", null, typeKind(p) === "num" ? "つぎ まちがえると こたえが でるよ。けいさんを たしかめてね" : "つぎ まちがえると こたえが でるよ。スペルを たしかめてね")));
+      tk.push(h("div", { class: "note good" }, typeKind(p) === "num" ? "🔢 こたえを うってね(たんいは なくても OK)" : "⌨️ えいごで うって こたえよう(大文字・小文字は どちらでも OK)"), typeCard(p));
       if (Q.hints > 0) tk.push(h("div", { class: "hintbox" }, p.hints.slice(0, Q.hints).map(function (t, i) { return h("p", null, "💡 ヒント" + (i + 1) + ": " + t); })));
       var tt = [];
       if (Q.hints < p.hints.length) tt.push(h("button", { class: "btn big alt", onclick: function () { Q.hints++; Q.helped = true; A.sfx("pop"); renderQuiz(); } }, "💡 ヒント"));
-      tt.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.typing = false; Q.helped = true; renderQuiz(); } }, "👆 えらんで こたえる"));
+      tt.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.typing = false; Q.helped = true; renderQuiz(); } }, isChal() ? "👆 えらんで こたえる(てんは なし)" : "👆 えらんで こたえる"));
+      if (!isChal()) tt.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.typing = false; Q.writing = true; renderQuiz(); } }, "✍️ ゆびで かく(じぶんで まるつけ)"));
       tt.push(h("button", { class: "btn big help" + (Q.wrong.length ? " pulse" : ""), onclick: openTutor }, "😵 わからない"));
       tk.push(h("div", { class: "tool-row" }, tt));
       view.apply(null, tk);
@@ -861,7 +902,7 @@
       var isAns = Q.done && c === p.answer;
       return h("button", { class: "btn big choice" + (wrong ? " wrong" : "") + (isAns ? " right" : ""), disabled: wrong || Q.done ? true : null, onclick: function () { answer(c); } }, c);
     }));
-    var kids = [head, qcard, choices];
+    var kids = [head, qcard, isChal() && !Q.done && !Q.wrong.length ? h("div", { class: "note" }, "📮 ちょうせんでは ゆびで かく こたえは つかえないよ(まるつけが できないから)") : null, choices];
 
     if (Q.afterTutor && !Q.done) kids.splice(1, 0, h("div", { class: "note good" }, "さっき おぼえたことで もういちど ちょうせん!"));
     if (stage) kids.splice(1, 0, stage);
@@ -891,8 +932,8 @@
         })));
       }
       var tools = [];
-      if (canType(p)) tools.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.typing = true; renderQuiz(); } }, "⌨️ うって こたえる"));
-      else tools.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.writing = true; renderQuiz(); } }, "✍️ かいて こたえる"));
+      if (canType(p) && !(isChal() && Q.helped)) tools.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.typing = true; renderQuiz(); } }, typeKind(p) === "num" ? "🔢 うって こたえる" : "⌨️ うって こたえる"));
+      else if (!isChal()) tools.push(h("button", { class: "btn big alt", onclick: function () { A.sfx("tap"); Q.writing = true; renderQuiz(); } }, "✍️ かいて こたえる"));
       if (Q.hints < p.hints.length) {
         tools.push(h("button", { class: "btn big alt", onclick: function () {
           Q.hints++; Q.helped = true; A.sfx("pop"); renderQuiz();
@@ -1344,5 +1385,5 @@
     }
   };
   A.core = { feed: earn, earn: earn, touchDay: touchDay, logEvent: logEvent, showEvents: showEvents, view: view, topbar: topbar, stars: stars, skillMap: skillMap, startMission: startMission, home: home, SUBJECTS: SUBJECTS, subjectInfo: subjectInfo, save: function () { A.save(); } };
-  A.debug = { chalEncode: chalEncode, chalUrl: chalUrl, chalDecode: chalDecode, skill: function (id) { return skillMap[id]; }, stars: stars, Q: function () { return Q; }, startMission: startMission, home: home, feed: growBy, view: view };
+  A.debug = { tk: function (p, sub, v) { var o = Q; Q = { subject: sub }; var r = [typeKind(p), v != null ? judgeTyped(p, v) : null]; Q = o; return r; }, chalEncode: chalEncode, chalUrl: chalUrl, chalDecode: chalDecode, skill: function (id) { return skillMap[id]; }, stars: stars, Q: function () { return Q; }, startMission: startMission, home: home, feed: growBy, view: view };
 })();
