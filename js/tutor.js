@@ -10,7 +10,18 @@
 
   var FOUNDATION = { 数学: "m-int", 英語: "e-word", 国語: "j-read", 理科: "s-observe", 社会: "h-map" };
 
-  function pieces(c, ex) {
+  /* もんだい文と どれだけ かかわるか(漢字・カタカナの ことばが いくつ かさなるか) */
+  function relScore(q, text) {
+    var words = String(q || "").match(/[一-龥ァ-ヶー]{2,}/g) || [], s = 0;
+    words.forEach(function (w) { if (String(text || "").indexOf(w) >= 0) s += w.length; });
+    return s;
+  }
+  function bestIndex(q, arr, get) {
+    var best = 0, bs = -1;
+    (arr || []).forEach(function (x, i) { var sc = relScore(q, get(x)); if (sc > bs) { bs = sc; best = i; } });
+    return bs > 0 ? best : 0;
+  }
+  function pieces(c, ex, tip) {
     var n = c.examples.length || 1;
     var i = ex % n;
     var list = [
@@ -20,6 +31,7 @@
     c.steps.forEach(function (s, k) {
       list.push({ head: "ひとつずつ " + (k + 1), text: s, visual: c.visuals ? c.visuals[i] || c.visuals[0] : null });
     });
+    if (tip) list.unshift({ head: "この もんだいの ポイント", text: tip, visual: null });
     return list;
   }
 
@@ -27,7 +39,11 @@
   A.tutorStart = function (root, problem, opts) {
     var first = D.skillConcept[problem.skill] || FOUNDATION[opts.subject] || "m-int";
     if (!concepts[first]) first = FOUNDATION[opts.subject] || "m-int";
-    var frames = [{ cid: first, piece: 0, ex: 0 }];
+    var c0 = concepts[first], qtext = problem.question;
+    var ex0 = bestIndex(qtext, c0.examples, function (x) { return x; });
+    var chk0 = bestIndex(qtext, c0.checks, function (x) { return x.question; });
+    var tip = (problem.hints || []).filter(function (x) { return x && x.indexOf("問題文の条件") < 0 && x !== problem.explanation && x.indexOf(problem.answer) < 0; })[0] || null;
+    var frames = [{ cid: first, piece: 0, ex: ex0, ex0: ex0, chk0: chk0 }];
     var check = null; // {variant, answer, correct, submitted, rev}
     var chooser = false;
     var passed = 0;
@@ -153,7 +169,7 @@
         return;
       }
 
-      var list = pieces(c, f.ex);
+      var list = pieces(c, f.ex, f === frames[0] && f.ex === f.ex0 ? tip : null);
       if (f.piece >= list.length) f.piece = list.length - 1;
       var p = list[f.piece];
       var last = f.piece === list.length - 1;
@@ -176,7 +192,7 @@
       actions.push(h("div", { class: "nav-row" }, nav));
       if (last) {
         actions.push(h("button", { class: "btn big good", onclick: function () {
-          check = { variant: f.ex % c.checks.length, answer: null, correct: null, submitted: false };
+          check = { variant: f.chk0 != null ? (f.chk0 + f.ex - f.ex0) % c.checks.length : f.ex % c.checks.length, answer: null, correct: null, submitted: false };
           rev++; render();
         } }, "😊 わかった! たしかめる"));
       }
