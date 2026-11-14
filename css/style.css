@@ -440,11 +440,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chal-vs span { font-size: 22px; font-weight: 900; color: #e86ab0; }
 .btn.line-btn { background: linear-gradient(#2fd36a, #06b54a); color: #fff; box-shadow: 0 5px 0 #048a38; font-weight: 800; width: 100%; }
 
-.fpick { display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px; width: 100%; }
-.fpick-item { flex: 0 0 auto; width: 92px; display: flex; flex-direction: column; align-items: center; gap: 2px; background: #f4f6ff; border: 3px solid transparent; border-radius: 16px; padding: 6px 4px; font: inherit; }
+.fpick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 6px 2px; width: 100%; max-height: 330px; overflow-y: auto; box-sizing: border-box; }
+.chal-card { max-width: 100%; box-sizing: border-box; min-width: 0; }
+.chal-card > * { max-width: 100%; }
+.fpick-item { min-width: 0; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; background: #f4f6ff; border: 3px solid transparent; border-radius: 16px; padding: 6px 4px; font: inherit; }
 .fpick-item.on { border-color: #e86ab0; background: #fff0f8; }
 .fpick-item .mate-art { font-size: 56px; line-height: 1; }
-.fpick-item small { font-size: 11px; max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fpick-item small { font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rival-show { display: flex; flex-direction: column; align-items: center; }
 .rival-show .mate-art { font-size: 96px; line-height: 1; transform: scaleX(-1); }
 .chal-vs .mate-art { font-size: 56px; line-height: 1; }
