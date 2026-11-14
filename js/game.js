@@ -204,6 +204,7 @@
     setTimeout(function () { foe.classList.remove("hit"); foe.classList.add("dead"); talk.textContent = "やられた〜!"; burst(stage, ["💨"], 4, er); }, 760);
   }
   function battleStage() {
+    if (Q && Q.rival) return rivalStage();
     var f = fighterPet();
     if (!f || !Q || !Q.foe) { Q && (Q.fx = null); return null; }
     var fx = Q.fx; Q.fx = null;
@@ -219,6 +220,28 @@
     }
     if (fx && fx !== "appear") setTimeout(function () { runFx(stage, fighter, foe, talk, fx, c, form); }, 40);
     return wrap;
+  }
+
+  /* ちょうせんじょうの バトル: じぶんの なかま vs あいての なかま */
+  function rivalStage() {
+    var fx = Q.fx; Q.fx = null;
+    var me = Q.me, rv = Q.rival, form = me.f, c = CREATURES[me.kind % CREATURES.length];
+    var fighter = h("div", { class: "fighter", style: me.v ? { filter: TINT[me.v].f } : null }, A.creatures.el(me.kind, me.f));
+    var foe = h("div", { class: "foe rival" + (fx === "appear" && Q.count === 0 ? " appear" : "") }, h("div", { style: rv.v ? { filter: TINT[rv.v].f } : null }, A.creatures.el(rv.kind, rv.f)));
+    var talk = h("div", { class: "taunt" }, Q.chal.n + "の " + rv.nm);
+    var stage = h("div", { class: "battle" }, fighter, foe, talk);
+    var left = Q.target - Q.ok;
+    var hp = h("div", { class: "rival-hp" }, h("span", null, "あいてHP"), h("div", { class: "hpbar" }, h("div", { class: "hpfill", style: { width: (left / Q.target * 100) + "%" } })), h("span", null, Q.chal.n + ": " + Q.chal.s + "もん"));
+    if (fx && fx !== "appear") setTimeout(function () {
+      if (!stage.parentNode) return;
+      if (fx === "counter") { fighter.classList.add("hurt"); foe.classList.add("jeer"); burst(stage, ["💢"], 3, fighter.getBoundingClientRect()); return; }
+      var fr = fighter.getBoundingClientRect(), er = foe.getBoundingClientRect();
+      fighter.style.setProperty("--dx", Math.max(40, er.left - fr.left - fr.width * 0.4) + "px");
+      fighter.classList.add("lunge");
+      var atk = ATTACK[c.type === "cool" ? "cool" : "cute"][form >= 3 ? 3 : 2];
+      setTimeout(function () { foe.classList.add("hit"); burst(stage, atk[1], 10, er); stage.appendChild(h("div", { class: "fx-banner" }, atk[0] + "!")); A.sfx("pop"); talk.textContent = left <= 0 ? "まいった〜!" : "いたた…"; }, 330);
+    }, 40);
+    return h("div", { class: "battle-wrap" }, stage, hp);
   }
 
   /* ================= ストリーク・記録 ================= */
@@ -981,23 +1004,58 @@
         A.sfx("tap"); nextQuestion();
       } }, "🎲 いろんな きょうかで"));
   }
-  /* おくる画面 */
-  function chalSend(ids, score, back) {
-    var s = S();
+  /* ===== たたかう なかま ===== */
+  function powOf(x) { return Math.min(4, (x.v || 0) + Math.max(0, formOf(x) - 1)); }
+  function myFighters() {
+    var s = S(), out = [];
+    (s.mates || []).forEach(function (m, i) { out.push({ kind: m.kind, v: m.v || 0, f: formOf(m), p: powOf(m), nm: m.name || CREATURES[m.kind % CREATURES.length].n, partner: i === s.partner }); });
+    s.pets.forEach(function (p) { if (p.done || p === activePet()) out.push({ kind: p.kind, v: 0, f: formOf(p), p: powOf(p), nm: petName(p) }); });
+    out.sort(function (x, y) { return (y.partner ? 9 : 0) + y.p - ((x.partner ? 9 : 0) + x.p); });
+    return out;
+  }
+  function fArt(c) { return h("div", { class: "mate-art", style: c.v ? { filter: TINT[c.v].f } : null }, A.creatures.el(c.kind, c.f)); }
+  function powStars(p) { return "💪".repeat(p + 1); }
+  function fighterPicker(list, cur, onPick) {
+    return h("div", { class: "fpick" }, list.map(function (c, i) {
+      return h("button", { class: "fpick-item" + (i === cur ? " on" : ""), onclick: function () { A.sfx("tap"); onPick(i); } },
+        fArt(c), h("small", null, c.nm), h("small", null, powStars(c.p)));
+    }));
+  }
+  function bonus(p) { return (p || 0) * 0.2; }
+  function newId() { return Math.random().toString(36).slice(2, 8); }
+
+  /* おくる画面 (reply: あいてへの けっか) */
+  function chalSend(ids, score, back, reply) {
+    var s = S(), list = myFighters(), cur = 0, id = newId(), sentOnce = false;
+    var bet = (s.bag || 0) >= 1 ? 1 : 0;
     var input = h("input", { class: "name-input", maxlength: "8", value: s.chalName || s.name || "", placeholder: "ニックネーム", "aria-label": "ニックネーム" });
+    var pickBox = h("div");
+    function paint() { A.clear(pickBox); pickBox.appendChild(fighterPicker(list, cur, function (i) { cur = i; paint(); })); }
+    paint();
     function data() {
       var nm = (input.value || "").trim().slice(0, 8) || "ともだち";
-      s.chalName = nm; A.save();
-      var o = { v: 1, n: nm, s: score, i: ids };
-      var url = chalUrl(o);
-      var text = "📮 " + nm + " から ちょうせんじょう!\n" + subjectsOf(ids) + " " + ids.length + "もん。" + nm + " は " + score + "もん せいかい。かてるかな?\n";
-      return { text: text, url: url };
+      s.chalName = nm;
+      var c = list[cur];
+      var o = { v: 2, id: id, n: nm, s: score, i: ids, b: bet, c: { k: c.kind, v: c.v, f: c.f, p: c.p, nm: c.nm } };
+      if (reply) o.r = reply;
+      if (!sentOnce) {
+        sentOnce = true;
+        if (bet) s.bag = Math.max(0, (s.bag || 0) - bet);
+        s.sent = s.sent || {}; s.sent[id] = { bet: bet, t: Date.now() };
+        var ks = Object.keys(s.sent); if (ks.length > 40) delete s.sent[ks[0]];
+      }
+      A.save();
+      var text = (reply ? "📨 " + nm + " から けっかと かえしの ちょうせんじょう!\n" : "📮 " + nm + " から ちょうせんじょう!\n") +
+        subjectsOf(ids) + " " + ids.length + "もん。" + nm + " は " + score + "もん せいかい。" + c.nm + " と いっしょに まってるよ!\n";
+      return { text: text, url: chalUrl(o) };
     }
-    view(topbar("📮 ちょうせんじょうを おくる", back || home),
+    view(topbar(reply ? "📨 けっかを かえす" : "📮 ちょうせんじょうを おくる", back || home),
       h("section", { class: "chal-card" },
-        h("div", { class: "chal-big" }, "📮"),
         h("div", { class: "chal-score" }, ids.length + "もん中 " + score + "もん せいかい!"),
         h("small", null, subjectsOf(ids) + "  (ヒントなしで 1かいめに あたった かず)"),
+        h("b", null, "いっしょに たたかう なかまを えらぼう"), pickBox,
+        h("small", { class: "muted" }, "💪が おおいほど ちょっと つよい(レアカラー・そだちぐあい)"),
+        h("div", { class: "bet" }, bet ? "🍙 かけごはん 1こ(おくると ふくろから 1こ へるよ。かつと 2こ もどる、まけても 1こ もどる)" : "🍙 ごはんが ないので きょうは かけなし"),
         h("label", null, "おくる ときの なまえ", input)),
       h("div", { class: "choice-col" },
         h("button", { class: "btn big line-btn", onclick: function () {
@@ -1023,30 +1081,81 @@
       try { document.execCommand("copy"); A.toast("コピーしたよ!"); } catch (e) { A.toast("ながおしで コピーしてね"); }
     }
   }
+  function rivalOf(o) { return o.c ? { kind: o.c.k, v: o.c.v || 0, f: o.c.f == null ? 3 : o.c.f, p: o.c.p || 0, nm: o.c.nm || "なかま" } : null; }
+  /* けっかが もどってきた(おくった ひと がわ) */
+  function chalSettle(o, next) {
+    var s = S(), r = o.r, rec0 = r && s.sent && s.sent[r.id];
+    if (!rec0 || rec0.done) return next();
+    rec0.done = true;
+    var gain = r.w === "w" ? rec0.bet + (r.b || 0) : rec0.bet;
+    s.bag = (s.bag || 0) + gain; A.save();
+    var title = r.w === "w" ? "🏆 かち!" : r.w === "d" ? "🤝 ひきわけ" : "😣 まけ…";
+    view(h("section", { class: "chal-card intro" },
+      h("div", { class: "chal-big jump" }, "📨"),
+      h("h1", null, "けっかが とどいたよ!"),
+      h("p", null, o.n + " との しょうぶは…"),
+      h("div", { class: "chal-vs" }, h("div", null, h("small", null, "あなた"), h("b", null, r.me)), h("span", null, "VS"), h("div", null, h("small", null, o.n), h("b", null, r.you))),
+      h("div", { class: "chal-score" }, title),
+      gain ? h("div", { class: "bet" }, "🍙 ごはん +" + gain + (r.w === "w" && r.b ? "(あいての かけごはんも ゲット!)" : r.w === "w" ? "(かけごはんが もどったよ。あいては かけなしだったよ)" : r.w === "d" ? "(かけごはんが もどったよ)" : "(さんかしょうで かけごはんが もどったよ)")) : null,
+      h("button", { class: "btn big go pulse", onclick: next }, "📮 かえしの ちょうせんじょうを みる ▶")));
+    A.sfx(r.w === "w" ? "levelup" : "pop"); if (r.w === "w") A.confetti(30);
+  }
   /* うけとる */
   function chalIntro(o) {
+    var rv = rivalOf(o), s = S(), played = s.got && s.got[o.id];
     view(h("section", { class: "chal-card intro" },
       h("div", { class: "chal-big jump" }, "📮"),
       h("h1", null, "ちょうせんじょうが とどいたよ!"),
+      rv ? h("div", { class: "rival-show" }, fArt(rv), h("small", null, o.n + " の " + rv.nm + "  " + powStars(rv.p))) : null,
       h("p", null, h("b", null, o.n), " から " + subjectsOf(o.i) + " " + o.i.length + "もんの しょうぶ!"),
       h("div", { class: "chal-score" }, o.n + " は " + o.s + "もん せいかい"),
-      h("p", { class: "muted" }, "ヒントなしで 1かいめに あてると 1てん。かてるかな?"),
-      h("button", { class: "btn big go pulse", onclick: function () {
-        A.sfx("tap");
-        Q = { subject: skillMap[probById[o.i[0]].skill].subject, review: o.i.slice(), chal: o, focus: null, pool: null, label: "📮 ちょうせん", count: 0, target: o.i.length, seen: {}, ok: 0, food: 0, newCards: [], helped: 0, events: [] };
-        nextQuestion();
-      } }, "ちょうせんする! ▶"),
+      o.b && !played ? h("div", { class: "bet" }, "🍙 かけごはん 1こ。かつと あいての ぶんも もらえる! まけても 1こ もどるよ") : null,
+      played ? h("div", { class: "note" }, "これは もう ちょうせんした ちょうせんじょう。れんしゅうで もういちど あそべるよ(かけごはんなし)") : null,
+      h("p", { class: "muted" }, "せいかいの かずで しょうぶ。おなじくらいの ときは なかまの つよさで きまるよ"),
+      h("button", { class: "btn big go pulse", onclick: function () { A.sfx("tap"); chalPick(o); } }, "ちょうせんする! ▶"),
       h("button", { class: "btn-ghost", onclick: home }, "あとで")));
     A.sfx("levelup");
+  }
+  function chalPick(o) {
+    var list = myFighters(), cur = 0, box = h("div");
+    var egg = list.length === 1 && list[0].f <= 1;
+    function paint() { A.clear(box); box.appendChild(fighterPicker(list, cur, function (i) { cur = i; paint(); })); }
+    paint();
+    view(topbar("だれで たたかう?", function () { chalIntro(o); }),
+      egg ? h("div", { class: "note good" }, "なかまが まだ いないから たまごで しょうぶ! もんだいを とくと たまごが そだつよ") : null,
+      box,
+      h("button", { class: "btn big go", onclick: function () {
+        var s = S(), me = list[cur], played = s.got && s.got[o.id];
+        var myBet = !played && o.b ? Math.min(1, s.bag || 0) : 0;
+        if (myBet) s.bag -= myBet;
+        if (o.id) { s.got = s.got || {}; s.got[o.id] = 1; var ks = Object.keys(s.got); if (ks.length > 60) delete s.got[ks[0]]; }
+        A.save(); A.sfx("tap");
+        Q = { subject: skillMap[probById[o.i[0]].skill].subject, review: o.i.slice(), chal: o, rival: rivalOf(o), me: me, myBet: myBet, theirBet: played ? 0 : (o.b || 0), focus: null, pool: null, label: "📮 ちょうせん", count: 0, target: o.i.length, seen: {}, ok: 0, food: 0, newCards: [], helped: 0, events: [] };
+        nextQuestion();
+      } }, "この なかまで しょうぶ! ▶"));
   }
   function chalResultBlock() {
     if (Q.chal) {
       var me = Q.ok, them = Q.chal.s, nm = Q.chal.n;
-      var msg = me > them ? "🏆 かち! すごい!" : me === them ? "🤝 ひきわけ!" : "😣 まけ… つぎは かとう!";
+      var em = me + bonus(Q.me && Q.me.p), et = them + bonus(Q.rival && Q.rival.p);
+      var res = em > et ? "w" : em === et ? "d" : "l";
+      if (!Q.settled) {
+        Q.settled = true;
+        Q.gain = res === "w" ? Q.myBet + Q.theirBet : Q.myBet;
+        S().bag = (S().bag || 0) + Q.gain; A.save();
+      }
+      var close = me === them && res !== "d";
+      var msg = res === "w" ? "🏆 かち! すごい!" : res === "d" ? "🤝 ひきわけ!" : "😣 まけ… つぎは かとう!";
+      var reply = { id: Q.chal.id, w: res === "w" ? "l" : res === "l" ? "w" : "d", me: them, you: me, b: Q.myBet };
       return h("section", { class: "chal-card" },
-        h("div", { class: "chal-vs" }, h("div", null, h("small", null, "あなた"), h("b", null, me)), h("span", null, "VS"), h("div", null, h("small", null, nm), h("b", null, them))),
+        h("div", { class: "chal-vs" },
+          h("div", null, Q.me ? fArt(Q.me) : null, h("small", null, "あなた"), h("b", null, me)), h("span", null, "VS"),
+          h("div", null, Q.rival ? fArt(Q.rival) : null, h("small", null, nm), h("b", null, them))),
         h("div", { class: "chal-score" }, msg),
-        h("button", { class: "btn big line-btn", onclick: function () { chalSend(Q.pids.slice(), me); } }, "📮 " + nm + " に かえしの ちょうせんじょう"),
+        close ? h("small", null, "おなじ てんすう! なかまの つよさ(" + powStars(Q.me.p) + " vs " + powStars(Q.rival.p) + ")で きまったよ") : null,
+        Q.gain ? h("div", { class: "bet" }, "🍙 ごはん +" + Q.gain + (res === "w" && Q.theirBet ? "(あいての かけごはんも ゲット!)" : "(かけごはんが もどったよ)")) : null,
+        h("button", { class: "btn big line-btn", onclick: function () { chalSend(Q.pids.slice(), me, null, Q.chal.id ? reply : null); } }, "📨 " + nm + " に けっかと かえしの ちょうせんじょう"),
+        h("small", { class: "muted" }, "けっかを かえすと、あいても ごはんが うけとれるよ"),
         S().first ? h("p", { class: "muted" }, "このアプリでは もんだいを とくと たまごが そだつよ! ホームで なまえを つけてね") : null);
     }
     if (Q.make) return h("section", { class: "chal-card" },
@@ -1229,11 +1338,11 @@
     try {
       var cm = /[?&]c=([^&#]+)/.exec(location.search || ""), co = cm && chalDecode(decodeURIComponent(cm[1]));
       if (cm) { try { history.replaceState(null, "", location.pathname); } catch (e) {} }
-      if (co) chalIntro(co); else home();
+      if (co) { if (co.r) chalSettle(co, function () { chalIntro(co); }); else chalIntro(co); } else home();
     } catch (e) {
       app.appendChild(h("pre", { class: "err" }, "エラー: " + (e && e.message)));
     }
   };
   A.core = { feed: earn, earn: earn, touchDay: touchDay, logEvent: logEvent, showEvents: showEvents, view: view, topbar: topbar, stars: stars, skillMap: skillMap, startMission: startMission, home: home, SUBJECTS: SUBJECTS, subjectInfo: subjectInfo, save: function () { A.save(); } };
-  A.debug = { chalUrl: chalUrl, chalDecode: chalDecode, skill: function (id) { return skillMap[id]; }, stars: stars, Q: function () { return Q; }, startMission: startMission, home: home, feed: growBy, view: view };
+  A.debug = { chalEncode: chalEncode, chalUrl: chalUrl, chalDecode: chalDecode, skill: function (id) { return skillMap[id]; }, stars: stars, Q: function () { return Q; }, startMission: startMission, home: home, feed: growBy, view: view };
 })();

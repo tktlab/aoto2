@@ -439,3 +439,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chal-vs b { font-size: 46px; line-height: 1.1; }
 .chal-vs span { font-size: 22px; font-weight: 900; color: #e86ab0; }
 .btn.line-btn { background: linear-gradient(#2fd36a, #06b54a); color: #fff; box-shadow: 0 5px 0 #048a38; font-weight: 800; width: 100%; }
+
+.fpick { display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px; width: 100%; }
+.fpick-item { flex: 0 0 auto; width: 92px; display: flex; flex-direction: column; align-items: center; gap: 2px; background: #f4f6ff; border: 3px solid transparent; border-radius: 16px; padding: 6px 4px; font: inherit; }
+.fpick-item.on { border-color: #e86ab0; background: #fff0f8; }
+.fpick-item .mate-art { font-size: 56px; line-height: 1; }
+.fpick-item small { font-size: 11px; max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rival-show { display: flex; flex-direction: column; align-items: center; }
+.rival-show .mate-art { font-size: 96px; line-height: 1; transform: scaleX(-1); }
+.chal-vs .mate-art { font-size: 56px; line-height: 1; }
+.chal-vs div:last-child .mate-art { transform: scaleX(-1); }
+.foe.rival > div { transform: scaleX(-1); }
+.foe.rival { font-size: 84px; }
+.rival-hp { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; margin-top: 4px; }
+.rival-hp .hpbar { flex: 1; height: 10px; background: #eee; border-radius: 6px; overflow: hidden; }
+.rival-hp .hpfill { height: 100%; background: linear-gradient(90deg, #ff6b6b, #ffb43a); transition: width .5s; }
+.bet { background: #fff7e0; border-radius: 12px; padding: 8px 10px; font-size: 13px; font-weight: 700; }
